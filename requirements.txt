@@ -1,12 +1,13 @@
 # Installed by the Hugging Face Space (Gradio SDK + ZeroGPU).
 # Each AI library is optional: the studio shows the missing tools as 「未安装」.
+# torch must be a ZeroGPU-supported version (2.8.0 to 2.13.0). Keep its line free of comments.
 gradio==6.29.1
 soundfile>=0.12
 numpy>=1.26
 httpx>=0.27
-torch==2.8.0           # ZeroGPU 支持的版本：2.8.0 ~ 2.13.0
+torch==2.8.0
 torchaudio==2.8.0
-demucs==4.0.1          # 分轨分离
-stable-ts>=2.17        # Whisper 歌词对齐
-basic-pitch>=0.4       # 音频转 MIDI
-transformers>=4.45     # MusicGen（没接 ACE-Step 时的作曲后备）
+demucs==4.0.1
+stable-ts>=2.17
+basic-pitch>=0.4
+transformers>=4.45
