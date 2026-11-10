@@ -28,6 +28,9 @@ MOCK = os.environ.get("MUSICLAB_MOCK") == "1"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "medium")
 DEMUCS_MODEL = os.environ.get("DEMUCS_MODEL", "htdemucs")
 MUSICGEN_MODEL = os.environ.get("MUSICGEN_MODEL", "facebook/musicgen-small")
+MUSICGEN_MAX = 120.0  # seconds; longer pieces are made window by window
+MUSICGEN_WINDOW = 30.0  # what the model was trained on
+MUSICGEN_CONTEXT = 10.0  # seconds fed back as the prompt for the next window
 ACESTEP_URL = os.environ.get("ACESTEP_URL", "").rstrip("/")
 ACESTEP_API_KEY = os.environ.get("ACESTEP_API_KEY", "")
 
@@ -292,13 +295,28 @@ def _musicgen(prompt, duration, out_dir, progress):
         _musicgen_model = (AutoProcessor.from_pretrained(MUSICGEN_MODEL),
                            MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL).eval())
     proc, model = _musicgen_model
-    progress("MusicGen 生成中…")
-    with on_device(model) as dev, torch.no_grad():
-        inputs = proc(text=[prompt], padding=True, return_tensors="pt").to(dev)
-        audio = model.generate(**inputs, do_sample=True, max_new_tokens=int(min(duration, 30) * 50))
     sr = model.config.audio_encoder.sampling_rate
+    total = min(duration, MUSICGEN_MAX)
+    with on_device(model) as dev, torch.no_grad():
+        # first window, then keep extending: the last few seconds become the audio prompt
+        # for the next window, so tempo, key and instruments carry on
+        progress("MusicGen 生成中…")
+        inputs = proc(text=[prompt], padding=True, return_tensors="pt").to(dev)
+        first = min(total, MUSICGEN_WINDOW)
+        out = model.generate(**inputs, do_sample=True, guidance_scale=3.0, max_new_tokens=int(first * 50))
+        audio = np.asarray(out[0].cpu().numpy(), dtype=np.float32).reshape(-1)[: int(first * sr)]
+        while len(audio) < int(total * sr) - sr // 10:
+            progress(f"MusicGen 接续生成… {len(audio) / sr:.0f}/{total:.0f} 秒")
+            ctx = audio[-int(MUSICGEN_CONTEXT * sr):]
+            step = min(total - len(audio) / sr, MUSICGEN_WINDOW - MUSICGEN_CONTEXT)
+            inputs = proc(audio=ctx, sampling_rate=sr, text=[prompt], padding=True, return_tensors="pt").to(dev)
+            out = model.generate(**inputs, do_sample=True, guidance_scale=3.0, max_new_tokens=int(step * 50))
+            new = np.asarray(out[0].cpu().numpy(), dtype=np.float32).reshape(-1)[len(ctx):]
+            if len(new) < sr // 10:
+                break
+            audio = np.concatenate([audio, new[: int(step * sr)]])
     dest = out_dir / "generated.wav"
-    sf.write(dest, audio[0].cpu().numpy().T, sr)
+    sf.write(dest, audio, sr)
     return {"file": dest.name, "engine": "musicgen"}
 
 

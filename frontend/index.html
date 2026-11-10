@@ -308,7 +308,7 @@ svg.auto circle{cursor:grab}
         <div class="card"><h5>AI 作曲 <span class="chip" data-f="generate"></span></h5>
           <textarea id="aiPrompt" style="min-height:52px" placeholder="风格描述，例如：温暖的华语流行抒情，钢琴与弦乐，女声，慢板"></textarea>
           <label class="hint"><input type="checkbox" id="aiUseLyr" checked> 带上「歌词对齐」里的歌词（接了 ACE-Step 时会唱出来）</label>
-          <div class="grp"><span class="lbl">长度</span><input id="aiDur" class="num" type="number" min="10" max="240" value="30"><span class="hint">秒</span><button id="aiGen" class="primary">生成并放到播放头</button></div></div>
+          <div class="grp"><span class="lbl">长度</span><input id="aiDur" class="num" type="number" min="10" max="240" value="30"><span class="hint" id="aiDurHint">秒</span><select id="aiGenSplit" class="tsel" title="生成后用 AI 把乐器拆成各自的音轨"><option value="">不分轨（一条混合音轨）</option><option value="4stems">生成后分成四轨</option><option value="6stems">生成后分成六轨</option></select><button id="aiGen" class="primary">生成并放到播放头</button></div></div>
       </div>
       <div class="ailog" id="aiLog"></div>
     </div>
@@ -726,7 +726,8 @@ async function aiConnect(quiet){const base=$('#aiUrl').value.trim().replace(/\/+
   try{const gc=await import(base+'/vendor/gradio-client.js');const client=await gc.Client.connect(base+'/');const r=await client.predict('/health',{});const feat=r.data[0].features;
     AI={base,feat,client,gc};try{localStorage.setItem('musiclab.ai',base)}catch(e){}
     $('#aiStat').textContent=feat.mock?'已连接（演示模式：返回的是合成的示例结果）':'已连接';
-    $$('#pAi .chip').forEach(c=>{const v=feat[c.dataset.f];c.className='chip '+(v?'ok':'no');c.textContent=v?(typeof v==='string'?v:'可用'):'未安装'});if(!quiet)aiLog('已连接 '+base,'d')}
+    $$('#pAi .chip').forEach(c=>{const v=feat[c.dataset.f];c.className='chip '+(v?'ok':'no');c.textContent=v?(typeof v==='string'?v:'可用'):'未安装'});
+    const gmax=feat.generate==='musicgen'?120:240;$('#aiDur').max=gmax;$('#aiDurHint').textContent=`秒（最长 ${gmax}）`;if(!quiet)aiLog('已连接 '+base,'d')}
   catch(e){AI.feat=null;$('#aiStat').textContent='连接失败';if(!quiet)aiLog('连接失败：'+(inArtifact?'网页版不能连接外部服务器':(e.message||e)),'e')}}
 function aiNeed(f){if(!AI.feat){toast('请先连接 AI 服务器');return false}if(!AI.feat[f]){toast('服务器还没装这个功能的模型');return false}return true}
 function selAudioClip(){const c=S.clips.find(c=>c.id===S.sel);if(!c||c.kind==='midi'){toast('请先在时间线上点选一个音频片段');return null}return c}
@@ -742,11 +743,11 @@ const aiFile=b=>AI.gc.handle_file(b);
 async function aiFetchAudio(f){const r=await fetch(f.url);if(!r.ok)throw new Error('下载结果失败 '+r.status);return await decode(new Blob([await r.arrayBuffer()]))}
 async function aiRun(btn,fn){btn.disabled=true;const t=btn.textContent;btn.textContent='处理中…';try{await fn()}catch(e){const m=e&&(e.message||e.title)||String(e);aiLog(m,'e');toast('AI 处理失败：'+m,4500)}finally{btn.disabled=false;btn.textContent=t;$('#aiStat').textContent=AI.feat?'已连接':'未连接'}}
 $('#aiConn').onclick=()=>aiConnect(false);
-$('#aiSep').onclick=e=>{if(!aiNeed('separate'))return;const c=selAudioClip();if(!c)return;aiRun(e.target,async()=>{
-  const [info,...files]=await aiCall('separate',{audio:aiFile(clipWavBlob(c)),mode:$('#aiSepMode').value},'分轨分离');const bufs=[];
+async function separateClip(c,mode){const [info,...files]=await aiCall('separate',{audio:aiFile(clipWavBlob(c)),mode},'分轨分离');const bufs=[];
   for(let i=0;i<info.stems.length;i++)if(files[i])bufs.push([info.stems[i],await aiFetchAudio(files[i])]);pushUndo();
   for(const[st,buf]of bufs){const t=newTrack(`${c.name} · ${st.label}`.slice(0,24));newClip(t.id,addBuffer(buf,st.label),c.start)}
-  const src=S.tracks.find(t=>t.id===c.tid);if(src)src.mute=true;renderAll();rebuildIfPlaying();aiLog(`分离完成：${bufs.length} 条分轨，原轨已静音`,'d')})};
+  const src=S.tracks.find(t=>t.id===c.tid);if(src)src.mute=true;renderAll();rebuildIfPlaying();aiLog(`分离完成：${bufs.length} 条分轨，原轨已静音`,'d')}
+$('#aiSep').onclick=e=>{if(!aiNeed('separate'))return;const c=selAudioClip();if(!c)return;aiRun(e.target,()=>separateClip(c,$('#aiSepMode').value))};
 $('#aiAlign').onclick=e=>{if(!aiNeed('align'))return;const c=selAudioClip();if(!c)return;let lines=S.lyrics.map(l=>l.text);if(!lines.length)lines=parseLyrics($('#lyrText').value).map(l=>l.text);if(!lines.length)return toast('请先在「歌词对齐」里填好歌词');
   aiRun(e.target,async()=>{const [res]=await aiCall('align',{audio:aiFile(clipWavBlob(c)),lyrics:JSON.stringify(lines),language:$('#aiLang').value,vocals_first:$('#aiVoc').checked},'歌词对齐');
     pushUndo();S.lyrics=res.lines.map(l=>({id:uid(),t:l.start==null?null:+(c.start+l.start).toFixed(2),text:l.text}));sortLyr();lastK=-2;renderLyrics();
@@ -755,7 +756,8 @@ $('#aiMidi').onclick=e=>{if(!aiNeed('transcribe'))return;const c=selAudioClip();
   pushUndo();const t=newTrack((c.name+' · MIDI').slice(0,24),'piano');const mc=newMidiClip(t.id,c.start,c.dur,res.notes.filter(n=>n.p>=RLO&&n.p<=RHI));mc.name='识别结果';renderAll();rebuildIfPlaying();aiLog(`识别出 ${mc.notes.length} 个音符`,'d')})};
 $('#aiGen').onclick=e=>{if(!aiNeed('generate'))return;const prompt=$('#aiPrompt').value.trim();const lyr=$('#aiUseLyr').checked?(S.lyrics.length?S.lyrics.map(l=>l.text).join('\n'):$('#lyrText').value.trim()):'';if(!prompt&&!lyr)return toast('请写一段风格描述');
   const at=snapT(curPos());aiRun(e.target,async()=>{const [info,file]=await aiCall('generate',{prompt,lyrics:lyr,duration:+$('#aiDur').value||30,bpm:Math.round(S.bpm),language:$('#aiLang').value},'AI 作曲');
-    const buf=await aiFetchAudio(file);pushUndo();const t=newTrack('AI 生成');newClip(t.id,addBuffer(buf,'AI · '+(prompt||'歌曲').slice(0,12)),at);renderAll();rebuildIfPlaying();aiLog(`生成完成（${info.engine}），${buf.duration.toFixed(1)} 秒`,'d')})};
+    const buf=await aiFetchAudio(file);pushUndo();const t=newTrack('AI 生成');const c=newClip(t.id,addBuffer(buf,'AI · '+(prompt||'歌曲').slice(0,12)),at);renderAll();rebuildIfPlaying();aiLog(`生成完成（${info.engine}），${buf.duration.toFixed(1)} 秒`,'d');
+    const split=$('#aiGenSplit').value;if(split&&c){if(AI.feat&&AI.feat.separate)await separateClip(c,split);else aiLog('这个服务器没有分轨功能，保留混合音轨','e')}})};
 
 /* ---------- DSP helpers: FFT, resampling, phase vocoder, loudness ---------- */
 const idle=()=>new Promise(r=>setTimeout(r,0));
