@@ -25,6 +25,12 @@ pinned: false
 - 片段检视：自动侦测 BPM 和调性、一键套用工程速度、拍点对齐格线
 - 变调、变速（相位声码器，音高和速度互不影响）
 - 音量自动化曲线
+- 取样乐器：钢琴、电钢琴、弦乐、尼龙吉他、电贝斯（FluidR3 GM 音色，MIT 许可，从 gleitz/midi-js-soundfonts 按需载入；载入失败时用合成音色）
+- MIDI 键盘（Web MIDI）和电脑键盘弹奏，可以录成 MIDI 片段，钢琴卷帘里可量化
+- 多选片段（Shift/Ctrl 点击、框选、Ctrl+A），一起移动、复制、删除
+- 段落标记（M 键），Shift+点击段落可循环播放该段
+- 侧链压缩（例如鼓一响，伴奏自动让开）
+- 五段参数 EQ，带频率响应曲线和实时频谱
 - 响度表（LUFS，依 ITU-R BS.1770）和一键母带：导出时调到 -14 或 -9 LUFS，峰值不超过 -1 dB
 
 **后端**（`app.py` + `backend/engines.py`）用 Gradio 的 `Server` 提供上面的网页，同时提供 AI 接口。每个接口都走 Gradio 的排队机制；在 Hugging Face ZeroGPU 上，GPU 只在调用期间分配，用量记在调用者自己的额度上。
