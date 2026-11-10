@@ -1,70 +1,83 @@
-import io
+"""API tests in demo mode (MUSICLAB_MOCK=1): start the Space app, call it like the studio does."""
+import json
 import os
-import time
+import socket
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 os.environ["MUSICLAB_MOCK"] = "1"
 
-from fastapi.testclient import TestClient  # noqa: E402
+import httpx  # noqa: E402
+from gradio_client import Client, handle_file  # noqa: E402
 
+import app as space  # noqa: E402
 from backend import engines  # noqa: E402
-from backend.app import app  # noqa: E402
-
-client = TestClient(app)
 
 
-def wav_bytes(seconds=6.0, sr=22050):
-    t = np.arange(int(seconds * sr)) / sr
-    buf = io.BytesIO()
-    sf.write(buf, (0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32), sr, format="WAV")
-    return buf.getvalue()
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
-def wait(job_id, timeout=20):
-    end = time.time() + timeout
-    while time.time() < end:
-        j = client.get(f"/api/jobs/{job_id}").json()
-        if j["status"] in ("done", "error"):
-            return j
-        time.sleep(0.1)
-    raise AssertionError("job timed out")
+@pytest.fixture(scope="module")
+def server():
+    port = _free_port()
+    space.app.launch(server_name="127.0.0.1", server_port=port, prevent_thread_lock=True, quiet=True, show_error=True)
+    url = f"http://127.0.0.1:{port}/"
+    yield url, Client(url, verbose=False)
+    space.app.get_blocks().close()
 
 
-def test_health_and_frontend():
-    assert client.get("/api/health").json()["features"]["mock"] is True
-    assert "音乐实验室" in client.get("/").text
+@pytest.fixture
+def wav(tmp_path):
+    p = tmp_path / "in.wav"
+    t = np.arange(int(6 * 22050)) / 22050
+    sf.write(p, (0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32), 22050)
+    return handle_file(str(p))
 
 
-def test_separate_returns_downloadable_stems():
-    r = client.post("/api/separate", files={"file": ("a.wav", wav_bytes(), "audio/wav")}, data={"mode": "4stems"})
-    j = wait(r.json()["id"])
-    assert j["status"] == "done"
-    stems = j["result"]["stems"]
-    assert [s["name"] for s in stems] == ["vocals", "drums", "bass", "other"]
-    assert client.get(stems[0]["url"]).status_code == 200
+def test_page_and_client_bundle(server):
+    url, _ = server
+    assert "音乐实验室" in httpx.get(url).text
+    js = httpx.get(url + "vendor/gradio-client.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]
 
 
-def test_align_transcribe_generate():
-    r = client.post("/api/align", files={"file": ("a.wav", wav_bytes(), "audio/wav")},
-                    data={"lyrics": '["第一句", "第二句"]', "language": "zh"})
-    lines = wait(r.json()["id"])["result"]["lines"]
-    assert [l["text"] for l in lines] == ["第一句", "第二句"] and lines[0]["start"] == 0
-
-    r = client.post("/api/transcribe", files={"file": ("a.wav", wav_bytes(), "audio/wav")})
-    assert wait(r.json()["id"])["result"]["notes"]
-
-    r = client.post("/api/generate", json={"prompt": "lofi piano", "duration": 10})
-    j = wait(r.json()["id"])
-    assert client.get(j["result"]["url"]).status_code == 200
+def test_health(server):
+    assert server[1].predict(api_name="/health")["features"]["mock"] is True
 
 
-def test_bad_requests():
-    assert client.post("/api/separate", files={"file": ("a.wav", wav_bytes(), "audio/wav")}, data={"mode": "x"}).status_code == 400
-    assert client.get("/api/jobs/nope").status_code == 404
-    r = client.post("/api/generate", json={"prompt": "", "lyrics": ""})
-    assert wait(r.json()["id"])["status"] == "error"
+def test_separate_four_stems(server, wav):
+    info, *files = server[1].predict(wav, "4stems", api_name="/separate")
+    assert [s["name"] for s in info["stems"]] == ["vocals", "drums", "bass", "other"]
+    assert all(f and sf.info(f).duration > 5 for f in files)
+
+
+def test_separate_two_stems_leaves_empty_slots(server, wav):
+    info, *files = server[1].predict(wav, "vocals", api_name="/separate")
+    assert [s["label"] for s in info["stems"]] == ["人声", "伴奏"]
+    assert files[2] is None and files[3] is None
+
+
+def test_align(server, wav):
+    res = server[1].predict(wav, json.dumps(["第一句", "第二句"]), "zh", True, api_name="/align")
+    assert [l["text"] for l in res["lines"]] == ["第一句", "第二句"] and res["lines"][0]["start"] == 0
+
+
+def test_transcribe_and_generate(server, wav):
+    assert server[1].predict(wav, api_name="/transcribe")["notes"]
+    info, path = server[1].predict("lofi piano", "", 10, 90, "zh", api_name="/generate")
+    assert info["engine"] == "mock" and abs(sf.info(path).duration - 10) < 0.1
+
+
+def test_errors_reach_the_client(server, wav):
+    with pytest.raises(Exception, match="mode"):
+        server[1].predict(wav, "x", api_name="/separate")
+    with pytest.raises(Exception, match="风格描述"):
+        server[1].predict("", "", 10, 0, "zh", api_name="/generate")
 
 
 def test_lines_from_words_maps_chinese_and_english():

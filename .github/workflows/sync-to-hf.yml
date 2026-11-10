@@ -1,0 +1,22 @@
+# Mirror main to the Hugging Face Space; the Space rebuilds itself after each push.
+# Needs the repository secret HF_TOKEN (a Hugging Face "Write" token).
+name: deploy to Hugging Face
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+env:
+  HF_SPACE: __HF_SPACE__   # <使用者名称>/<Space 名称>
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: push to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then echo "::error::缺少 HF_TOKEN secret"; exit 1; fi
+          git push --force "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" HEAD:main
