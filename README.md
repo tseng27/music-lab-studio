@@ -22,12 +22,16 @@ pinned: false
 - 分析器：频谱、峰值、响度、调音器
 - 歌词对齐：打点同步、LRC 导入导出、卡拉 OK 预览
 - 录音、保存/打开工程（`.json`，音频一并存入）、导出 WAV 混音
+- 片段检视：自动侦测 BPM 和调性、一键套用工程速度、拍点对齐格线
+- 变调、变速（相位声码器，音高和速度互不影响）
+- 音量自动化曲线
+- 响度表（LUFS，依 ITU-R BS.1770）和一键母带：导出时调到 -14 或 -9 LUFS，峰值不超过 -1 dB
 
 **后端**（`app.py` + `backend/engines.py`）用 Gradio 的 `Server` 提供上面的网页，同时提供 AI 接口。每个接口都走 Gradio 的排队机制；在 Hugging Face ZeroGPU 上，GPU 只在调用期间分配，用量记在调用者自己的额度上。
 
 | 功能 | 接口 | 用到的模型 |
 | --- | --- | --- |
-| 分轨分离（人声/伴奏，或四轨） | `/separate` | [Demucs](https://github.com/adefossez/demucs) `htdemucs` |
+| 分轨分离（人声/伴奏、四轨，或加上吉他和钢琴的六轨） | `/separate` | [Demucs](https://github.com/adefossez/demucs) `htdemucs`／`htdemucs_6s` |
 | 自动对歌词 | `/align` | Whisper，经 [stable-ts](https://github.com/jianfch/stable-ts) 做强制对齐（可选择先分离人声） |
 | 音频转 MIDI | `/transcribe` | Spotify [basic-pitch](https://github.com/spotify/basic-pitch) |
 | AI 作曲 | `/generate` | 接上 [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) 后可以生成带人声的歌曲；没接时用 MusicGen 生成纯音乐 |

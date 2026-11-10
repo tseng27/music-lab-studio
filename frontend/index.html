@@ -166,6 +166,12 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
 .ailog{margin-top:10px;font-family:var(--f-mono);font-size:11.5px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
 .ailog .e{color:var(--rec)}.ailog .d{color:var(--ok)}
 #bRec.on{background:var(--rec);border-color:var(--rec);color:#fff}
+.sbtn.a.on{background:#4fd1c5;border-color:#4fd1c5;color:#08201d}
+svg.auto{position:absolute;left:0;top:0;height:100%;z-index:4;cursor:crosshair;touch-action:none;background:rgba(10,12,16,.35)}
+svg.auto circle{cursor:grab}
+.insp .grp{margin-top:2px}
+.kvrow{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px}.kvrow span{color:var(--muted)}
+.res{font-family:var(--f-mono);color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#2b303b;border:1px solid var(--line);padding:8px 14px;border-radius:6px;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
 .toast.show{opacity:1}
 .empty{position:absolute;left:calc(var(--hw) + 24px);top:120px;color:var(--muted);pointer-events:none}
@@ -199,6 +205,7 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
     </div>
     <div class="grp"><span class="lbl">主输出</span><input id="mvol" type="range" min="0" max="1.2" step="0.01" value="0.9" style="width:80px"><div class="mm"><i id="mmL"></i></div>
       <button id="bLim" class="on" title="母带限幅器：防止总输出削波">限幅</button>
+      <select id="exNorm" class="tsel" style="flex:0 0 auto" title="导出时的母带响度"><option value="">原始响度</option><option value="-14" selected>母带 -14 LUFS（串流）</option><option value="-9">母带 -9 LUFS（响亮）</option></select>
       <button id="bExport">导出混音</button></div>
     <div class="grp"><button id="bSave">保存工程</button><button id="bOpen">打开工程</button><input id="projFile" type="file" accept=".json,application/json" hidden></div>
   </div>
@@ -217,6 +224,7 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
   <div class="dock" id="dock">
     <div class="tabs">
       <button class="tab on" data-tab="mix">混音台</button>
+      <button class="tab" data-tab="clip">片段</button>
       <button class="tab" data-tab="roll">钢琴卷帘</button>
       <button class="tab" data-tab="lyr">歌词对齐</button>
       <button class="tab" data-tab="ana">分析器</button>
@@ -226,6 +234,7 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
       <button id="bDock" title="收起/展开">▾</button>
     </div>
     <div class="pane" id="pMix"><div class="mixer" id="mixer"></div></div>
+    <div class="pane" id="pClip" hidden><div class="insp" id="insp"></div></div>
     <div class="pane" id="pRoll" hidden>
       <div class="rbar"><b id="rName">未选择 MIDI 片段</b>
         <span class="lbl">音色</span><select id="rInst"></select>
@@ -244,6 +253,7 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
           <div class="stat"><span class="lbl">峰值</span><b id="aPeak">-∞</b></div>
           <div class="stat"><span class="lbl">短时响度 (RMS)</span><b id="aRms">-∞</b></div>
           <div class="stat"><span class="lbl">限幅压缩量</span><b id="aGr">0.0</b></div>
+          <div class="stat big"><span class="lbl">整首混音响度（导出前检查）</span><b id="aLufs">—</b><button id="aMeas" style="margin-top:6px">测量整首</button></div>
           <div class="stat"><span class="lbl">分析来源</span><select id="aSrc" class="tsel" style="margin-top:6px;width:100%"></select></div>
         </div>
       </div>
@@ -253,7 +263,7 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
       <div class="ainote hint" id="aiNote" hidden>这个网页版受安全限制，不能连接外部服务器。要用 AI 工具，请打开你部署好的后端网址，后端会直接提供这个工作室页面。</div>
       <div class="aigrid">
         <div class="card"><h5>分轨分离 <span class="chip" data-f="separate"></span></h5><div class="hint">把选中的音频片段拆成人声、伴奏，或拆成鼓、贝斯、其他乐器，放到新轨道上并对齐原位置。</div>
-          <div class="grp"><select id="aiSepMode" class="tsel"><option value="vocals">人声 + 伴奏</option><option value="4stems">四轨：人声/鼓/贝斯/其他</option></select><button id="aiSep" class="primary">分离选中片段</button></div></div>
+          <div class="grp"><select id="aiSepMode" class="tsel"><option value="vocals">人声 + 伴奏</option><option value="4stems">四轨：人声/鼓/贝斯/其他</option><option value="6stems">六轨：再拆出吉他、钢琴</option></select><button id="aiSep" class="primary">分离选中片段</button></div></div>
         <div class="card"><h5>自动对歌词 <span class="chip" data-f="align"></span></h5><div class="hint">用「歌词对齐」里的歌词，自动给选中片段的每一句打上时间。</div>
           <div class="grp"><select id="aiLang" class="tsel"><option value="zh">中文</option><option value="en">英文</option><option value="ja">日文</option><option value="ko">韩文</option></select><label class="hint"><input type="checkbox" id="aiVoc" checked> 先分离人声</label><button id="aiAlign" class="primary">自动对齐</button></div></div>
         <div class="card"><h5>音频转 MIDI <span class="chip" data-f="transcribe"></span></h5><div class="hint">识别选中片段里的旋律或和弦，生成一条可以在钢琴卷帘里编辑的 MIDI 乐器轨。</div>
@@ -358,14 +368,14 @@ function buildMix(ac){
   const dly=ac.createDelay(3);dly.delayTime.value=beat()*0.75;const fb=ac.createGain();fb.gain.value=0.35;const dlp=ac.createBiquadFilter();dlp.type='lowpass';dlp.frequency.value=3500;dly.connect(dlp).connect(fb).connect(dly);dlp.connect(master);
   const nodes={};
   for(const t of S.tracks){const n={};n.in=ac.createGain();n.lo=ac.createBiquadFilter();n.lo.type='lowshelf';n.lo.frequency.value=180;n.mid=ac.createBiquadFilter();n.mid.type='peaking';n.mid.frequency.value=1200;n.mid.Q.value=0.9;n.hi=ac.createBiquadFilter();n.hi.type='highshelf';n.hi.frequency.value=5000;
-    n.comp=ac.createDynamicsCompressor();n.comp.attack.value=0.005;n.comp.release.value=0.15;n.make=ac.createGain();n.pan=ac.createStereoPanner();n.vol=ac.createGain();n.an=ac.createAnalyser();n.an.fftSize=2048;n.sr=ac.createGain();n.sd=ac.createGain();
-    n.in.connect(n.lo).connect(n.mid).connect(n.hi).connect(n.comp).connect(n.make).connect(n.pan).connect(n.vol).connect(master);n.vol.connect(n.an);n.vol.connect(n.sr).connect(rev);n.vol.connect(n.sd).connect(dly);nodes[t.id]=n}
+    n.comp=ac.createDynamicsCompressor();n.comp.attack.value=0.005;n.comp.release.value=0.15;n.make=ac.createGain();n.pan=ac.createStereoPanner();n.auto=ac.createGain();n.vol=ac.createGain();n.an=ac.createAnalyser();n.an.fftSize=2048;n.sr=ac.createGain();n.sd=ac.createGain();
+    n.in.connect(n.lo).connect(n.mid).connect(n.hi).connect(n.comp).connect(n.make).connect(n.pan).connect(n.auto).connect(n.vol).connect(master);n.vol.connect(n.an);n.vol.connect(n.sr).connect(rev);n.vol.connect(n.sd).connect(dly);nodes[t.id]=n}
   const m={ac,master,lim,man,spec,dly,nodes};applyParams(m,true);return m}
 function applyParams(m=mix,now){if(!m)return;const ac=m.ac,T=ac.currentTime,set=(p,v)=>now?p.value=v:p.setTargetAtTime(v,T,0.015);const any=S.tracks.some(t=>t.solo);
   for(const t of S.tracks){const n=m.nodes[t.id];if(!n)continue;const aud=!t.mute&&(!any||t.solo);set(n.vol.gain,aud?t.vol:0);set(n.pan.pan,t.pan);set(n.lo.gain,t.eq[0]);set(n.mid.gain,t.eq[1]);set(n.hi.gain,t.eq[2]);
     n.comp.threshold.value=-t.comp*40;n.comp.ratio.value=1+t.comp*11;set(n.make.gain,1+t.comp*1.2);set(n.sr.gain,t.rev);set(n.sd.gain,t.dly)}
   set(m.master.gain,S.master);set(m.dly.delayTime,beat()*0.75);m.lim.threshold.value=S.limit?-3:0;m.lim.ratio.value=S.limit?20:1}
-function scheduleClips(ac,m,from,when,until){const out=[];
+function scheduleClips(ac,m,from,when,until){const out=[];scheduleAuto(m,from,when);
   for(const c of S.clips){const n=m.nodes[c.tid];if(!n)continue;let cs=c.start,ce=c.start+c.dur;if(until!=null)ce=Math.min(ce,until);if(ce<=from||cs>=ce)continue;
     if(c.kind==='midi'){const tr=S.tracks.find(t=>t.id===c.tid);for(const nt of c.notes){if(nt.s>=c.dur)continue;const ns=cs+nt.s;if(ns<from-1e-4||ns>=ce)continue;out.push(...synthNote(ac,n.in,tr.inst||'piano',nt.p,when+(ns-from),Math.min(nt.d,c.dur-nt.s),nt.v||0.8))}continue}
     const b=BUF.get(c.bid);if(!b)continue;
@@ -392,11 +402,11 @@ function setPlayIcon(){$('#playIco').innerHTML=playing?'<path d="M3 2h4v12H3zM9 
 /* ---------- rendering ---------- */
 const W=()=>Math.max(songEnd()+40,90)*S.pps;
 function renderAll(){renderTracks();renderMixer();renderLyrics();layout();renderRoll();if(!$('#pAna').hidden)fillAnaSrc()}
-function layout(){const w=W();$('#content').style.width=`calc(var(--hw) + ${w}px)`;$$('.lane').forEach(l=>l.style.width=w+'px');drawRuler();drawGrids();updatePos();$('.empty')&&($('.empty').hidden=S.clips.length>0)}
+function layout(){const w=W();$('#content').style.width=`calc(var(--hw) + ${w}px)`;$$('.lane').forEach(l=>l.style.width=w+'px');drawRuler();drawGrids();drawAutos();updatePos();$('.empty')&&($('.empty').hidden=S.clips.length>0)}
 function renderTracks(){const R=$('#rows');R.innerHTML='';
   for(const t of S.tracks){const row=document.createElement('div');row.className='row trow';row.dataset.tid=t.id;
     row.innerHTML=`<div class="hdr ${S.selTrack===t.id?'sel':''}"><div class="tcolor" style="background:${t.color}"></div><div class="tmeter" data-m="${t.id}"><i></i></div>
-      <div class="hl1"><input class="tname" value="${esc(t.name)}" aria-label="音轨名称"><button class="sbtn m ${t.mute?'on':''}" title="静音">M</button><button class="sbtn s ${t.solo?'on':''}" title="独奏">S</button><button class="sbtn x" title="删除音轨">×</button></div>
+      <div class="hl1"><input class="tname" value="${esc(t.name)}" aria-label="音轨名称"><button class="sbtn m ${t.mute?'on':''}" title="静音">M</button><button class="sbtn s ${t.solo?'on':''}" title="独奏">S</button><button class="sbtn a ${t.showAuto?'on':''}" title="音量自动化曲线">A</button><button class="sbtn x" title="删除音轨">×</button></div>
       <div class="hl2"><span>音量</span><input type="range" min="0" max="1.2" step="0.01" data-tid="${t.id}" data-k="vol" value="${t.vol}"></div>
       ${t.kind==='inst'?`<div class="hl2"><span>音色</span><select class="tsel" data-inst="${t.id}">${instOpts(t.inst)}</select></div>`:`<div class="hl2 pan"><span>声像</span><input type="range" min="-1" max="1" step="0.01" data-tid="${t.id}" data-k="pan" value="${t.pan}"></div>`}</div>
       <div class="lane" data-tid="${t.id}"><canvas class="grid"></canvas></div>`;
@@ -405,8 +415,10 @@ function renderTracks(){const R=$('#rows');R.innerHTML='';
     row.querySelector('.m').onclick=()=>{t.mute=!t.mute;syncTrackBtns(t);applyParams()};
     row.querySelector('.s').onclick=()=>{t.solo=!t.solo;syncTrackBtns(t);applyParams()};
     row.querySelector('.x').onclick=()=>delTrack(t.id);
+    row.querySelector('.a').onclick=()=>{t.showAuto=!t.showAuto;renderTracks();layout();if(t.showAuto)toast('音量曲线：点击加控制点，拖动调整，双击删除',4000)};
     const lane=row.querySelector('.lane');bindLane(lane,t);R.appendChild(row);
-    for(const c of S.clips.filter(c=>c.tid===t.id))lane.appendChild(clipEl(c))}
+    for(const c of S.clips.filter(c=>c.tid===t.id))lane.appendChild(clipEl(c));
+    if(t.showAuto)lane.appendChild(autoEl(t))}
   if(!S.tracks.length)R.innerHTML='<div class="empty">点击「+ 音轨」或「导入音频」开始</div>'}
 const instOpts=v=>Object.entries(INST).map(([k,n])=>`<option value="${k}" ${k===v?'selected':''}>${n}</option>`).join('');
 document.addEventListener('change',e=>{const id=e.target.dataset&&e.target.dataset.inst;if(!id)return;const t=S.tracks.find(t=>t.id===id);if(!t)return;pushUndo();t.inst=e.target.value;$$(`[data-inst="${id}"]`).forEach(s=>s.value=t.inst);
@@ -437,7 +449,7 @@ function drawWave(cv,c,t){const b=BUF.get(c.bid);if(!b)return;const w=Math.max(1
 
 /* ---------- interactions: clips ---------- */
 function select(id){S.sel=id;$$('.clip').forEach(e=>e.classList.toggle('sel',e.dataset.cid===id));const c=S.clips.find(c=>c.id===id);
-  $('#selInfo').textContent=c?`选中：${c.name} · 起点 ${fmtShort(c.start)} · 长度 ${c.dur.toFixed(2)}s · 滚轮+Shift 调片段增益`:'';if(c){S.selTrack=c.tid;if(c.kind==='midi'&&S.rollClip!==c.id){S.rollClip=c.id;renderRoll()}}}
+  $('#selInfo').textContent=c?`选中：${c.name} · 起点 ${fmtShort(c.start)} · 长度 ${c.dur.toFixed(2)}s · 滚轮+Shift 调片段增益`:'';if(c){S.selTrack=c.tid;if(c.kind==='midi'&&S.rollClip!==c.id){S.rollClip=c.id;renderRoll()}}renderInspector()}
 function laneAtY(y){for(const l of $$('.trow .lane')){const r=l.getBoundingClientRect();if(y>=r.top&&y<r.bottom)return l}return null}
 function clipDown(e,c,el){if(e.button!==0)return;e.stopPropagation();e.preventDefault();select(c.id);
   const r=el.getBoundingClientRect(),x=e.clientX-r.left,cl=e.target.classList;let mode='move';
@@ -551,7 +563,8 @@ $('#bLrc').onclick=async()=>{const s=toLRC();if(!s)return toast('还没有带时
 async function decode(file){const ab=await file.arrayBuffer();const ac=actx||new OfflineAudioContext(2,44100,44100);return await new Promise((res,rej)=>ac.decodeAudioData(ab,res,rej))}
 async function importFiles(files,tid,at){let t=tid?S.tracks.find(t=>t.id===tid):null;if(t&&t.kind==='inst')t=null;pushUndo();let i=0;
   for(const f of files){toast('正在解码 '+f.name+' …',8000);try{const buf=await decode(f);const bid=addBuffer(buf,f.name.replace(/\.[^.]+$/,''));let tr=t;if(!tr||i>0){tr=newTrack(f.name.replace(/\.[^.]+$/,'').slice(0,18))}newClip(tr.id,bid,at!=null?at:snapT(curPos()));i++}catch(e){toast('无法解码 '+f.name+'，请换成 WAV/MP3')}}
-  renderAll();if(i)toast(`已导入 ${i} 个音频`);rebuildIfPlaying()}
+  renderAll();if(i)toast(`已导入 ${i} 个音频`);rebuildIfPlaying();
+  if(i===1){const c=S.clips[S.clips.length-1];select(c.id);analyzeClip(c).then(r=>{renderInspector();toast(`检测到约 ${r.bpm} BPM · ${r.key}。到「片段」分页可以套用到工程`,5000)}).catch(()=>{})}}
 $('#bImport').onclick=()=>$('#file').click();
 $('#file').onchange=e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)importFiles(fs,null,null)};
 $('#arr').addEventListener('dragover',e=>e.preventDefault());
@@ -571,8 +584,10 @@ let dlNS;const inArtifact=!!(window.claude&&window.claude.use);
 async function saveFile(name,data,mime){if(inArtifact){if(dlNS===undefined)dlNS=await window.claude.use('downloads').catch(()=>null);if(dlNS){try{await dlNS.save({filename:name,data});return true}catch(e){if(e&&e.code==='declined')return false;toast('保存失败：'+(e&&e.message||e.code))}return false}}
   const blob=data instanceof Blob?data:new Blob([data],{type:mime||'application/octet-stream'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);return true}
 $('#bExport').onclick=async()=>{const end=songEnd();if(!end)return toast('时间线上还没有音频');const b=$('#bExport');b.disabled=true;b.textContent='渲染中…';
-  try{const sr=44100,len=Math.ceil((end+2.5)*sr),oc=new OfflineAudioContext(2,len,sr),m=buildMix(oc);scheduleClips(oc,m,0,0,null);const out=await oc.startRendering();const wav=encodeWAV(out);
-    const ok=inArtifact?await saveFile('mixdown.zip',zip('mixdown.wav',wav)):await saveFile('mixdown.wav',wav,'audio/wav');if(ok)toast(inArtifact?'已导出 mixdown.zip（内含 44.1kHz 16bit WAV）':'已导出 mixdown.wav')}
+  try{const out=await renderMix(),tgt=$('#exNorm').value;let note='';
+    if(tgt){b.textContent='母带处理…';const r=await masterAsync(out,+tgt);note=`，响度 ${r.lufs.toFixed(1)} LUFS，峰值 ${r.peak.toFixed(1)} dB`}
+    const wav=encodeWAV(out);
+    const ok=inArtifact?await saveFile('mixdown.zip',zip('mixdown.wav',wav)):await saveFile('mixdown.wav',wav,'audio/wav');if(ok)toast((inArtifact?'已导出 mixdown.zip（内含 44.1kHz 16bit WAV）':'已导出 mixdown.wav')+note,4500)}
   catch(e){toast('导出失败：'+e.message)}finally{b.disabled=false;b.textContent='导出混音'}};
 
 /* ---------- piano roll ---------- */
@@ -695,6 +710,144 @@ $('#aiGen').onclick=e=>{if(!aiNeed('generate'))return;const prompt=$('#aiPrompt'
   const at=snapT(curPos());aiRun(e.target,async()=>{const [info,file]=await aiCall('generate',{prompt,lyrics:lyr,duration:+$('#aiDur').value||30,bpm:Math.round(S.bpm),language:$('#aiLang').value},'AI 作曲');
     const buf=await aiFetchAudio(file);pushUndo();const t=newTrack('AI 生成');newClip(t.id,addBuffer(buf,'AI · '+(prompt||'歌曲').slice(0,12)),at);renderAll();rebuildIfPlaying();aiLog(`生成完成（${info.engine}），${buf.duration.toFixed(1)} 秒`,'d')})};
 
+/* ---------- DSP helpers: FFT, resampling, phase vocoder, loudness ---------- */
+const idle=()=>new Promise(r=>setTimeout(r,0));
+const hannCache=new Map();
+function hann(n){let w=hannCache.get(n);if(!w){w=new Float64Array(n);for(let i=0;i<n;i++)w[i]=0.5-0.5*Math.cos(2*Math.PI*i/n);hannCache.set(n,w)}return w}
+const fftPlans=new Map();
+function fftPlan(n){let p=fftPlans.get(n);if(p)return p;const bits=Math.log2(n),rev=new Uint32Array(n),cos=new Float64Array(n/2),sin=new Float64Array(n/2);
+  for(let i=0;i<n;i++){let r=0;for(let b=0;b<bits;b++)r|=((i>>b)&1)<<(bits-1-b);rev[i]=r}for(let i=0;i<n/2;i++){cos[i]=Math.cos(2*Math.PI*i/n);sin[i]=-Math.sin(2*Math.PI*i/n)}p={rev,cos,sin};fftPlans.set(n,p);return p}
+/* in-place radix-2 FFT; inv=true gives the inverse (scaled by 1/n) */
+function fft(re,im,inv){const n=re.length,{rev,cos,sin}=fftPlan(n);for(let i=0;i<n;i++){const j=rev[i];if(j>i){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t}}
+  for(let size=2;size<=n;size<<=1){const half=size>>1,step=n/size;for(let i=0;i<n;i+=size)for(let j=0,k=0;j<half;j++,k+=step){const wr=cos[k],wi=inv?-sin[k]:sin[k],a=i+j,b=a+half,tr=re[b]*wr-im[b]*wi,ti=re[b]*wi+im[b]*wr;re[b]=re[a]-tr;im[b]=im[a]-ti;re[a]+=tr;im[a]+=ti}}
+  if(inv)for(let i=0;i<n;i++){re[i]/=n;im[i]/=n}}
+/* mono, resampled copy of part of a buffer (the browser does the downmix + resample) */
+async function renderMono(buf,off,dur,sr){const n=Math.max(1,Math.floor(dur*sr)),oc=new OfflineAudioContext(1,n,sr),s=oc.createBufferSource();s.buffer=buf;s.connect(oc.destination);s.start(0,off,dur);return(await oc.startRendering()).getChannelData(0)}
+/* windowed-sinc resampler: reads x at rate p (output length = length/p), band-limited for p>1 */
+function resample(x,p){const Z=16,P=512,cut=Math.min(1,1/p)*0.97,tab=new Float32Array((P+1)*2*Z);
+  for(let ph=0;ph<=P;ph++)for(let j=0;j<2*Z;j++){const d=ph/P+(Z-1-j),a=cut*d,sinc=Math.abs(a)<1e-9?1:Math.sin(Math.PI*a)/(Math.PI*a),w=Math.abs(d)>=Z?0:0.5+0.5*Math.cos(Math.PI*d/Z);tab[ph*2*Z+j]=cut*sinc*w}
+  const n=Math.floor(x.length/p),y=new Float32Array(n),L=x.length;
+  for(let i=0;i<n;i++){const t=i*p,c=Math.floor(t),ph=Math.round((t-c)*P)*2*Z;let s=0;for(let j=0;j<2*Z;j++){const k=c-Z+1+j;if(k>=0&&k<L)s+=x[k]*tab[ph+j]}y[i]=s}return y}
+/* phase vocoder with identity phase locking: changes length by factor r, keeps pitch */
+async function pvStretch(x,r,onProg){const N=2048,Hs=512,Ha=Hs/r,half=N/2+1,win=hann(N),nOut=Math.round(x.length*r),frames=Math.ceil(nOut/Hs)+1;
+  const out=new Float32Array(nOut+N),norm=new Float32Array(nOut+N),re=new Float64Array(N),im=new Float64Array(N),mag=new Float64Array(half),phIn=new Float64Array(half),lastIn=new Float64Array(half),phOut=new Float64Array(half),peaks=new Int32Array(half);
+  const TWO=2*Math.PI;let prevPos=0;
+  for(let f=0;f<frames;f++){const pos=Math.round(f*Ha);for(let i=0;i<N;i++){const k=pos+i;re[i]=k<x.length?x[k]*win[i]:0;im[i]=0}fft(re,im,false);
+    for(let k=0;k<half;k++){mag[k]=Math.hypot(re[k],im[k]);phIn[k]=Math.atan2(im[k],re[k])}
+    if(f===0)phOut.set(phIn);
+    else{const ha=pos-prevPos;let np=0;for(let k=2;k<half-2;k++){const m=mag[k];if(m>mag[k-1]&&m>=mag[k+1]&&m>mag[k-2]&&m>=mag[k+2])peaks[np++]=k}
+      const adv=k=>{const om=TWO*k/N;let d=phIn[k]-lastIn[k]-om*ha;d-=TWO*Math.round(d/TWO);phOut[k]+=(om+(ha>0?d/ha:0))*Hs};
+      if(!np)for(let k=0;k<half;k++)adv(k);
+      else{for(let j=0;j<np;j++)adv(peaks[j]);let j=0;for(let k=0;k<half;k++){while(j<np-1&&k>(peaks[j]+peaks[j+1])/2)j++;const pk=peaks[j];if(k!==pk)phOut[k]=phOut[pk]+(phIn[k]-phIn[pk])}}}
+    for(let k=0;k<half;k++){re[k]=mag[k]*Math.cos(phOut[k]);im[k]=mag[k]*Math.sin(phOut[k])}for(let k=1;k<N/2;k++){re[N-k]=re[k];im[N-k]=-im[k]}fft(re,im,true);
+    const o=f*Hs;for(let i=0;i<N&&o+i<out.length;i++){out[o+i]+=re[i]*win[i];norm[o+i]+=win[i]*win[i]}
+    lastIn.set(phIn);prevPos=pos;if(f%96===0){onProg&&onProg(f/frames);await idle()}}
+  const y=new Float32Array(nOut);for(let i=0;i<nOut;i++)y[i]=out[i]/Math.max(norm[i],0.15);return y}
+/* integrated loudness, ITU-R BS.1770 (K-weighting, 400 ms blocks, absolute and relative gates) */
+async function measureLUFS(buf){const sr=buf.sampleRate,oc=new OfflineAudioContext(buf.numberOfChannels,buf.length,sr),s=oc.createBufferSource();s.buffer=buf;
+  const sh=oc.createBiquadFilter();sh.type='highshelf';sh.frequency.value=1681;sh.gain.value=4;const hp=oc.createBiquadFilter();hp.type='highpass';hp.frequency.value=38;hp.Q.value=0.5;s.connect(sh).connect(hp).connect(oc.destination);s.start();
+  const k=await oc.startRendering(),B=Math.round(0.4*sr),H=Math.round(0.1*sr),pre=[];
+  for(let c=0;c<k.numberOfChannels;c++){const d=k.getChannelData(c),p=new Float64Array(d.length+1);for(let i=0;i<d.length;i++)p[i+1]=p[i]+d[i]*d[i];pre.push(p)}
+  const z=[];for(let i=0;i+B<=k.length;i+=H){let s2=0;for(const p of pre)s2+=(p[i+B]-p[i])/B;z.push(s2)}
+  const L=v=>-0.691+10*Math.log10(v+1e-15),abs=z.filter(v=>L(v)>-70);if(!abs.length)return-Infinity;
+  const rel=L(abs.reduce((a,b)=>a+b,0)/abs.length)-10,g=abs.filter(v=>L(v)>rel);return L(g.reduce((a,b)=>a+b,0)/g.length)}
+function peakDb(buf){let p=0;for(let c=0;c<buf.numberOfChannels;c++){const d=buf.getChannelData(c);for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a}}return 20*Math.log10(p+1e-12)}
+/* look-ahead peak limiter (5 ms look-ahead, 80 ms release), applied in place */
+function limitBuf(buf,ceilDb){const c=10**(ceilDb/20),sr=buf.sampleRate,n=buf.length,la=Math.round(0.005*sr),att=Math.exp(-1/(0.0015*sr)),rel=Math.exp(-1/(0.08*sr)),ch=[];for(let i=0;i<buf.numberOfChannels;i++)ch.push(buf.getChannelData(i));
+  const need=new Float32Array(n);for(let i=0;i<n;i++){let p=0;for(const d of ch){const a=Math.abs(d[i]);if(a>p)p=a}need[i]=p>c?c/p:1}
+  const tgt=new Float32Array(n),dq=new Int32Array(n);let h=0,t=0;for(let i=n-1;i>=0;i--){while(t>h&&need[dq[t-1]]>=need[i])t--;dq[t++]=i;while(dq[h]>i+la)h++;tgt[i]=need[dq[h]]}
+  let env=1;for(let i=0;i<n;i++){const g=tgt[i];env=g<env?g+(env-g)*att:g+(env-g)*rel;for(const d of ch){let v=d[i]*env;if(v>c)v=c;else if(v<-c)v=-c;d[i]=v}}}
+function scaleBuf(buf,g){for(let c=0;c<buf.numberOfChannels;c++){const d=buf.getChannelData(c);for(let i=0;i<d.length;i++)d[i]*=g}}
+/* bring a rendered mix to a loudness target with a -1 dB peak ceiling; two passes because limiting lowers loudness a little */
+async function masterAsync(buf,target){for(let pass=0;pass<2;pass++){const L=await measureLUFS(buf);if(!isFinite(L))break;if(Math.abs(L-target)<0.2)break;scaleBuf(buf,10**((target-L)/20));limitBuf(buf,-1)}
+  return{lufs:await measureLUFS(buf),peak:peakDb(buf)}}
+async function renderMix(){const end=songEnd(),sr=44100,len=Math.ceil((end+2.5)*sr),oc=new OfflineAudioContext(2,len,sr),m=buildMix(oc);scheduleClips(oc,m,0,0,null);return await oc.startRendering()}
+
+/* ---------- tempo and key detection ---------- */
+const KK_MAJ=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88],KK_MIN=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
+function corr(a,b){const n=a.length,ma=a.reduce((x,y)=>x+y,0)/n,mb=b.reduce((x,y)=>x+y,0)/n;let s=0,sa=0,sb=0;for(let i=0;i<n;i++){const x=a[i]-ma,y=b[i]-mb;s+=x*y;sa+=x*x;sb+=y*y}return s/Math.sqrt(sa*sb+1e-12)}
+async function analyzeClip(c){const b=BUF.get(c.bid).buf,sr=11025,dur=Math.min(c.dur,150),x=await renderMono(b,c.off,dur,sr);
+  const N=1024,H=128,fps=sr/H,frames=Math.floor((x.length-N)/H);if(frames<fps*4)throw new Error('片段太短，至少要 4 秒');
+  const win=hann(N),re=new Float64Array(N),im=new Float64Array(N),prev=new Float64Array(N/2),env=new Float64Array(frames);
+  for(let f=0;f<frames;f++){const o=f*H;for(let i=0;i<N;i++){re[i]=x[o+i]*win[i];im[i]=0}fft(re,im,false);let s=0;for(let k=1;k<N/2;k++){const m=Math.log1p(100*Math.hypot(re[k],im[k])),d=m-prev[k];if(d>0&&f)s+=d;prev[k]=m}env[f]=s;if(f%500===0)await idle()}
+  const W=Math.round(fps*0.5),on=new Float64Array(frames);let acc=0;for(let i=0;i<frames;i++){acc+=env[i];if(i>=W)acc-=env[i-W];on[i]=Math.max(0,env[i]-acc/Math.min(i+1,W))}
+  const lo=Math.floor(fps*60/200),hi=Math.ceil(fps*60/55),ac=new Float64Array(hi+2);
+  for(let L=lo;L<=hi+1;L++){let s=0;for(let i=0;i+L<frames;i++)s+=on[i]*on[i+L];ac[L]=s/(frames-L)}
+  let best=lo,bs=-1;for(let L=lo;L<=hi;L++){const bpm=60*fps/L,w=Math.exp(-0.5*(Math.log2(bpm/120)/0.9)**2),v=ac[L]*w;if(v>bs){bs=v;best=L}}
+  const a=ac[best-1]||ac[best],m=ac[best],d=ac[best+1]||ac[best],den=a-2*m+d,lag=best+(den?(a-d)/(2*den):0),period=lag;
+  let bp=0,bv=-1;for(let ph=0;ph<period;ph++){let s=0;for(let t=ph;t<frames;t+=period)s+=on[Math.round(t)]||0;if(s>bv){bv=s;bp=ph}}
+  const bpm=Math.round(600*fps/period)/10;
+  /* key: chroma from a coarser STFT, matched against Krumhansl-Kessler profiles */
+  const N2=4096,H2=2048,w2=hann(N2),r2=new Float64Array(N2),i2=new Float64Array(N2),chroma=new Float64Array(12),pc=new Int8Array(N2/2).fill(-1);
+  for(let k=1;k<N2/2;k++){const f=k*sr/N2;if(f>=55&&f<=2000)pc[k]=((Math.round(12*Math.log2(f/440))+69)%12+12)%12}
+  for(let o=0;o+N2<=x.length;o+=H2){for(let i=0;i<N2;i++){r2[i]=x[o+i]*w2[i];i2[i]=0}fft(r2,i2,false);for(let k=1;k<N2/2;k++)if(pc[k]>=0)chroma[pc[k]]+=Math.hypot(r2[k],i2[k])}
+  let key='',kc=-2;const ch=[...chroma];for(let t=0;t<12;t++){const rot=ch.slice(t).concat(ch.slice(0,t)),cM=corr(rot,KK_MAJ),cm=corr(rot,KK_MIN);if(cM>kc){kc=cM;key=NN[t]+' 大调'}if(cm>kc){kc=cm;key=NN[t]+' 小调'}}
+  c.bpm=bpm;c.phase=+((bp/fps+0.6*N/sr)%(period/fps)).toFixed(3);  /* flux peaks a little before the onset reaches the window centre */
+  c.key=key;return{bpm,key,phase:c.phase}}
+const shiftKey=(key,semis)=>{if(!key)return key;const[n,mode]=key.split(' '),i=NN.indexOf(n);return NN[((i+Math.round(semis))%12+12)%12]+' '+mode};
+
+/* ---------- pitch / tempo processing of a clip ---------- */
+async function processClip(c,semis,tempoPct,onProg){const b=BUF.get(c.bid).buf,sr=b.sampleRate,p=2**(semis/12),tr=tempoPct/100,r=p/tr,s0=Math.floor(c.off*sr),n=Math.min(b.length-s0,Math.floor(c.dur*sr)),chs=[],C=b.numberOfChannels;
+  for(let ch=0;ch<C;ch++){let x=b.getChannelData(ch).subarray(s0,s0+n);if(Math.abs(r-1)>1e-4)x=await pvStretch(x,r,q=>onProg&&onProg((ch+q)/C));if(Math.abs(p-1)>1e-4)x=resample(x,p);chs.push(x)}
+  const len=Math.min(...chs.map(x=>x.length)),nb=new AudioBuffer({length:len,numberOfChannels:C,sampleRate:sr});chs.forEach((x,i)=>nb.copyToChannel(x.subarray(0,len),i));return nb}
+
+/* ---------- clip inspector ---------- */
+function renderInspector(){const el=$('#insp');if(!el||$('#pClip').hidden)return;const c=S.clips.find(c=>c.id===S.sel);
+  if(!c){el.innerHTML='<div class="hint">在时间线上点选一个片段，这里会显示它的速度、调性，并可以变调、变速。</div>';return}
+  const t=S.tracks.find(t=>t.id===c.tid),gdb=(20*Math.log10(c.gain)).toFixed(1);
+  const info=`<div class="card"><h5>${esc(c.name)}</h5><div class="kvrow"><span>音轨</span><b>${esc(t?t.name:'')}</b><span>起点</span><b>${fmtShort(c.start)}（第 ${fmtBars(c.start)} 拍）</b><span>长度</span><b>${c.dur.toFixed(2)} 秒</b>
+    <span>片段增益</span><span><input id="cGain" class="num" type="number" step="0.5" min="-30" max="12" value="${gdb}"> dB</span></div></div>`;
+  if(c.kind==='midi'){el.innerHTML=`<div class="aigrid">${info}<div class="card"><h5>移调</h5><div class="hint">把所有音符整体升降，1 = 半音，12 = 一个八度。</div>
+    <div class="grp"><input id="cSemi" class="num" type="number" min="-24" max="24" step="1" value="0"><span class="hint">半音</span><button id="cProc" class="primary">套用</button><button onclick="openRoll('${c.id}')">打开钢琴卷帘</button></div></div></div>`;bindInspector(c);return}
+  const ana=c.bpm?`<span class="res">${c.bpm} BPM · ${c.key}</span>`:'<span class="hint">尚未分析</span>';
+  el.innerHTML=`<div class="aigrid">${info}
+    <div class="card"><h5>速度与调性</h5><div class="hint">自动侦测这个片段的 BPM 和调性。设为工程 BPM 后，格线和节拍器会跟歌曲一致。</div>
+      <div class="grp"><button id="cAna" class="primary">分析</button>${ana}</div>
+      <div class="grp"><button id="cSetBpm" ${c.bpm?'':'disabled'}>设为工程 BPM</button><button id="cAlign" ${c.bpm?'':'disabled'} title="移动片段，让它的拍点落在格线上">对齐拍点到格线</button></div></div>
+    <div class="card"><h5>变调 / 变速</h5><div class="hint">音高和速度分开调，互不影响（相位声码器）。会生成处理后的新音频，可以撤销。</div>
+      <div class="grp"><span class="lbl">变调</span><input id="cSemi" class="num" type="number" min="-12" max="12" step="1" value="0"><span class="hint">半音</span>
+        <span class="lbl">速度</span><input id="cTempo" class="num" type="number" min="50" max="200" step="1" value="100"><span class="hint">%</span></div>
+      <div class="grp"><button id="cMatch" ${c.bpm?'':'disabled'} title="把速度调到和工程 BPM 一样">匹配工程速度</button><button id="cProc" class="primary">套用</button></div></div></div>`;bindInspector(c)}
+function bindInspector(c){const on=(id,fn)=>{const e=$('#'+id);if(e)e.onclick=fn};
+  const g=$('#cGain');if(g)g.onchange=()=>{pushUndo();c.gain=clamp(10**((+g.value||0)/20),0.03,4);const el=$(`.clip[data-cid="${c.id}"]`);el&&placeClip(el,c);rebuildIfPlaying()};
+  if(c.kind==='midi'){on('cProc',()=>{const s=Math.round(+$('#cSemi').value||0);if(!s)return;pushUndo();c.notes.forEach(n=>n.p=clamp(n.p+s,RLO,RHI));afterRoll(c);toast(`已移调 ${s>0?'+':''}${s} 半音`)});return}
+  on('cAna',async e=>{const b=e.target;b.disabled=true;b.textContent='分析中…';try{const r=await analyzeClip(c);toast(`约 ${r.bpm} BPM · ${r.key}`)}catch(err){toast('分析失败：'+err.message)}renderInspector()});
+  on('cSetBpm',()=>{S.bpm=clamp(c.bpm,40,240);$('#bpm').value=S.bpm;layout();applyParams();rebuildIfPlaying();toast(`工程 BPM 已设为 ${S.bpm}`)});
+  on('cAlign',()=>{const bt=beat(),hit=c.start+c.phase;let ns=Math.round(hit/bt)*bt-c.phase;while(ns<0)ns+=bt;pushUndo();c.start=+ns.toFixed(4);renderTracks();layout();select(c.id);rebuildIfPlaying();toast('拍点已对齐格线')});
+  on('cMatch',()=>{$('#cTempo').value=Math.round(S.bpm/c.bpm*1000)/10});
+  on('cProc',async e=>{const semis=clamp(+$('#cSemi').value||0,-12,12),tempo=clamp(+$('#cTempo').value||100,50,200);if(!semis&&tempo===100)return toast('先设定变调或速度');
+    const b=e.target;b.disabled=true;try{const nb=await processClip(c,semis,tempo,q=>b.textContent=`处理中 ${Math.round(q*100)}%`);pushUndo();
+      const base=BUF.get(c.bid).name.replace(/ \[[^\]]*\]$/,''),tag=[semis?`${semis>0?'+':''}${semis} 半音`:'',tempo!==100?`${tempo}%`:''].filter(Boolean).join(' · '),k=nb.duration/c.dur;
+      c.bid=addBuffer(nb,`${base} [${tag}]`);c.name=`${c.name.replace(/ \[[^\]]*\]$/,'')} [${tag}]`;c.off=0;c.dur=nb.duration;c.fin*=k;c.fout*=k;
+      if(c.bpm){c.bpm=Math.round(c.bpm*tempo/10)/10;c.phase=+(c.phase/(tempo/100)).toFixed(3);c.key=shiftKey(c.key,semis)}
+      renderTracks();layout();select(c.id);rebuildIfPlaying();toast(`处理完成：${tag}`)}catch(err){toast('处理失败：'+err.message)}finally{b.disabled=false;renderInspector()}})}
+
+/* ---------- volume automation ---------- */
+const AMAX=1.5;
+function autoVal(t,time){const a=t.auto;if(!a||!a.length)return 1;if(time<=a[0][0])return a[0][1];for(let i=1;i<a.length;i++)if(time<a[i][0]){const[t0,v0]=a[i-1],[t1,v1]=a[i];return v0+(v1-v0)*(time-t0)/Math.max(1e-6,t1-t0)}return a[a.length-1][1]}
+function scheduleAuto(m,from,when){for(const t of S.tracks){const n=m.nodes[t.id];if(!n||!n.auto)continue;const g=n.auto.gain;g.cancelScheduledValues(0);g.setValueAtTime(autoVal(t,from),when);for(const[pt,v]of(t.auto||[]))if(pt>from)g.linearRampToValueAtTime(v,when+(pt-from))}}
+const SVGNS='http://www.w3.org/2000/svg';
+function autoEl(t){const sv=document.createElementNS(SVGNS,'svg');sv.setAttribute('class','auto');sv.dataset.auto=t.id;
+  sv.addEventListener('pointerdown',e=>autoDown(e,t,sv));sv.addEventListener('dblclick',e=>{const i=e.target.dataset&&e.target.dataset.i;if(i==null)return;pushUndo();t.auto.splice(+i,1);drawAuto(sv,t);rebuildIfPlaying()});return sv}
+function drawAutos(){$$('svg.auto').forEach(sv=>{const t=S.tracks.find(t=>t.id===sv.dataset.auto);if(t)drawAuto(sv,t)})}
+function autoY(v,h){return 6+(1-v/AMAX)*(h-12)}
+function drawAuto(sv,t){const w=W(),h=sv.parentElement?sv.parentElement.clientHeight:84;sv.setAttribute('width',w);sv.setAttribute('height',h);const a=t.auto||[];
+  const pts=a.length?[[0,a[0][1]],...a,[w/S.pps,a[a.length-1][1]]]:[[0,1],[w/S.pps,1]];
+  sv.innerHTML=`<line x1="0" x2="${w}" y1="${autoY(1,h)}" y2="${autoY(1,h)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>`+
+    `<polyline fill="none" stroke="#4fd1c5" stroke-width="2" points="${pts.map(([x,v])=>`${x*S.pps},${autoY(v,h)}`).join(' ')}"/>`+
+    a.map(([x,v],i)=>`<circle data-i="${i}" cx="${x*S.pps}" cy="${autoY(v,h)}" r="5" fill="#4fd1c5" stroke="#08201d" stroke-width="1.5"><title>${dbs(v)} dB</title></circle>`).join('')}
+function autoDown(e,t,sv){if(e.button!==0)return;e.preventDefault();e.stopPropagation();const r=sv.getBoundingClientRect(),h=r.height,before=snap();t.auto=t.auto||[];
+  const at=ev=>({x:Math.max(0,snapT((ev.clientX-r.left)/S.pps,ev)),v:clamp((1-((ev.clientY-r.top)-6)/(h-12))*AMAX,0,AMAX)});let i=e.target.dataset&&e.target.dataset.i!=null?+e.target.dataset.i:-1,moved=false;
+  if(i<0){const p=at(e);t.auto.push([p.x,+p.v.toFixed(3)]);t.auto.sort((a,b)=>a[0]-b[0]);i=t.auto.findIndex(q=>q[0]===p.x&&q[1]===+p.v.toFixed(3));moved=true;drawAuto(sv,t)}
+  sv.setPointerCapture(e.pointerId);const pt=t.auto[i];
+  const mv=ev=>{moved=true;const p=at(ev),lo=i>0?t.auto[i-1][0]:0,hi=i<t.auto.length-1?t.auto[i+1][0]:1e9;pt[0]=clamp(p.x,lo,hi);pt[1]=+p.v.toFixed(3);$('#selInfo').textContent=`音量曲线 ${fmtShort(pt[0])} · ${dbs(pt[1])} dB`;drawAuto(sv,t)};
+  const up=()=>{sv.removeEventListener('pointermove',mv);sv.removeEventListener('pointerup',up);if(moved){undoS.push(before);redoS.length=0;rebuildIfPlaying()}};
+  sv.addEventListener('pointermove',mv);sv.addEventListener('pointerup',up)}
+
+/* analyzer: loudness of the whole mix */
+$('#aMeas').onclick=async e=>{if(!songEnd())return toast('时间线上还没有音频');const b=e.target;b.disabled=true;b.textContent='测量中…';try{const out=await renderMix(),L=await measureLUFS(out),pk=peakDb(out);
+  $('#aLufs').textContent=`${isFinite(L)?L.toFixed(1):'-∞'} LUFS · 峰值 ${pk.toFixed(1)} dB`;toast(L>-10?'很响了，串流平台会把它调小':L<-18?'偏小声，导出时可选「母带 -14 LUFS」':'响度适中')}catch(err){toast('测量失败：'+err.message)}finally{b.disabled=false;b.textContent='测量整首'}};
+
 /* ---------- transport wiring ---------- */
 $('#bPlay').onclick=toggle;$('#bStop').onclick=stop;$('#bHome').onclick=()=>seek(0);
 $('#bLoop').onclick=()=>{const c=S.clips.find(c=>c.id===S.sel);if(!S.loop){if(c){S.loopA=c.start;S.loopB=c.start+c.dur}else{const b4=beat()*4;S.loopA=Math.floor(curPos()/b4)*b4;S.loopB=S.loopA+b4*4}S.loop=true;toast(`循环 ${fmtShort(S.loopA)} – ${fmtShort(S.loopB)}`)}else S.loop=false;$('#bLoop').classList.toggle('on',S.loop);drawRuler();rebuildIfPlaying()};
@@ -704,8 +857,8 @@ $('#bMet').onclick=()=>{S.met=!S.met;$('#bMet').classList.toggle('on',S.met);reb
 $('#zoom').oninput=e=>setZoom(+e.target.value);
 $('#bAdd').onclick=()=>{pushUndo();const t=newTrack();S.selTrack=t.id;renderAll()};
 $('#bSplit').onclick=splitSel;$('#bDel').onclick=delSel;$('#bDup').onclick=dupSel;$('#bUndo').onclick=undo;$('#bRedo').onclick=redo;
-const PANES={mix:'#pMix',roll:'#pRoll',lyr:'#pLyr',ana:'#pAna',ai:'#pAi'};
-function showTab(name){$$('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===name));for(const[k,s]of Object.entries(PANES))$(s).hidden=k!==name;$('#dock').classList.remove('min');$('#bDock').textContent='▾';if(name==='roll')renderRoll(true);if(name==='ana')fillAnaSrc()}
+const PANES={mix:'#pMix',clip:'#pClip',roll:'#pRoll',lyr:'#pLyr',ana:'#pAna',ai:'#pAi'};
+function showTab(name){$$('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===name));for(const[k,s]of Object.entries(PANES))$(s).hidden=k!==name;$('#dock').classList.remove('min');$('#bDock').textContent='▾';if(name==='roll')renderRoll(true);if(name==='clip')renderInspector();if(name==='ana')fillAnaSrc()}
 $$('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 $('#bDock').onclick=()=>{const d=$('#dock');d.classList.toggle('min');$('#bDock').textContent=d.classList.contains('min')?'▴':'▾';setTimeout(drawRuler,0)};
 addEventListener('keydown',e=>{const tg=e.target.tagName;if(tg==='TEXTAREA'||(tg==='INPUT'&&e.target.type!=='range'))return;const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
