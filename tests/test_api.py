@@ -167,3 +167,60 @@ def test_collab_room_sync(server):
             assert httpx.get(url + "collab/room1234/audio/b1").content == b"RIFFdata"
 
     asyncio.run(run())
+
+
+def test_musicgen_loads_once_with_fake_transformers(tmp_path, monkeypatch):
+    """The real MusicGen path (no GPU, no download): load once, then reuse the cached model."""
+    import contextlib
+    import sys
+    import types
+
+    loads = []
+
+    class Out:
+        def __init__(self, a):
+            self.a = a
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self.a
+
+    class Inputs(dict):
+        def to(self, dev):
+            return self
+
+    class Proc:
+        @classmethod
+        def from_pretrained(cls, name):
+            loads.append(name)
+            return cls()
+
+        def __call__(self, **kw):
+            return Inputs()
+
+    class Model:
+        config = types.SimpleNamespace(audio_encoder=types.SimpleNamespace(sampling_rate=32000))
+
+        @classmethod
+        def from_pretrained(cls, name):
+            return cls()
+
+        def eval(self):
+            return self
+
+        def generate(self, max_new_tokens, **kw):
+            return [Out(np.zeros((1, 3200), dtype=np.float32))]
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.no_grad = contextlib.nullcontext
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "transformers", types.SimpleNamespace(AutoProcessor=Proc, MusicgenForConditionalGeneration=Model))
+    monkeypatch.setattr(engines, "on_device", lambda m: contextlib.nullcontext("cpu"))
+    monkeypatch.setattr(engines, "_musicgen_model", None)
+    for _ in range(2):
+        res = engines._musicgen("strings", 5, tmp_path, lambda *_: None)
+        assert res == {"file": "generated.wav", "engine": "musicgen"}
+    assert loads == [engines.MUSICGEN_MODEL]
+    assert sf.info(tmp_path / "generated.wav").samplerate == 32000
