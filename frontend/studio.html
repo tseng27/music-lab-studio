@@ -164,6 +164,18 @@ svg.auto circle{cursor:grab}
 .insp .grp{margin-top:2px}
 .kvrow{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px}.kvrow span{color:var(--muted)}
 .res{font-family:var(--f-mono);color:var(--accent)}
+.mkrow .hdr{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 10px;color:var(--muted)}
+.mkrow .hdr button{padding:0 7px;height:20px;font-size:12px}
+.mkrow .lane{height:26px;background:var(--panel)}
+.mk{position:absolute;top:3px;height:20px;border-left:2px solid #e8d44d;background:rgba(232,212,77,.12);color:#f3e7a1;font-size:11px;padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;user-select:none;touch-action:none;border-radius:0 3px 3px 0}
+.mk:nth-child(even){border-color:#4fd1c5;background:rgba(79,209,197,.12);color:#bdf0ea}
+.marquee{position:absolute;border:1px solid var(--accent);background:rgba(242,169,59,.12);z-index:9;pointer-events:none}
+#bKeys.on,#bMidiIn.on{background:#5aa9e6;border-color:#5aa9e6;color:#08131f}
+.eqwrap{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:12px;height:100%;min-height:200px}
+@media (max-width:900px){.eqwrap{grid-template-columns:1fr;height:auto}#eqc{height:220px}}
+#eqc{width:100%;height:100%;min-height:160px;max-height:100%;display:block;background:#0b0c10;border-radius:6px;cursor:crosshair;touch-action:none}
+.eqb{display:grid;grid-template-columns:18px 1fr;gap:2px 6px;font-size:11px;font-family:var(--f-mono);color:var(--muted)}
+.eqb i{width:10px;height:10px;border-radius:50%;display:inline-block;margin-top:3px}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#2b303b;border:1px solid var(--line);padding:8px 14px;border-radius:6px;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
 .toast.show{opacity:1}
 .empty{position:absolute;left:calc(var(--hw) + 24px);top:120px;color:var(--muted);pointer-events:none}
@@ -188,7 +200,9 @@ svg.auto circle{cursor:grab}
       <button id="bAdd" title="新建音频轨">+ 音频轨</button>
       <button id="bAddInst" title="新建乐器轨（MIDI）">+ 乐器轨</button>
       <button id="bMidi" title="在选中的乐器轨、播放头位置新建 4 小节 MIDI 片段">新建 MIDI</button>
-      <button id="bRec" title="用麦克风录到选中的音频轨 (R)">● 录音</button>
+      <button id="bRec" title="录音 (R)：选中音频轨时录麦克风，选中乐器轨时录 MIDI 演奏">● 录音</button>
+      <button id="bMidiIn" title="连接 MIDI 键盘，弹奏选中的乐器轨">MIDI 键盘</button>
+      <button id="bKeys" title="用电脑键盘弹奏：A W S E D F T G Y H U J K = C 到高音 C，Z/X 换八度">⌨ 键盘弹奏</button>
       <button id="bSplit" title="在播放头处分割选中片段 (S)">分割</button>
       <button id="bDup" title="复制片段 (Ctrl+D)">复制</button>
       <button id="bDel" title="删除片段 (Delete)">删除</button>
@@ -206,6 +220,7 @@ svg.auto circle{cursor:grab}
     <div id="scroller">
       <div id="content">
         <div class="row rrow"><div class="hdr"><span class="lbl">时间线</span><span class="lbl" id="gridLbl">1/16</span></div><div class="lane rlane" id="rlane"><canvas id="ruler"></canvas></div></div>
+        <div class="row mkrow"><div class="hdr"><span>段落</span><button id="bMk" title="在播放头加段落标记 (M)">+</button></div><div class="lane" id="mkLane"></div></div>
         <div class="row lyrrow"><div class="hdr"><span>歌词</span><span class="lbl" id="lyrCount"></span></div><div class="lane" id="lyrLane"></div></div>
         <div id="rows"></div>
         <div id="playhead"></div>
@@ -217,6 +232,7 @@ svg.auto circle{cursor:grab}
     <div class="tabs">
       <button class="tab on" data-tab="mix">混音台</button>
       <button class="tab" data-tab="clip">片段</button>
+      <button class="tab" data-tab="eq">EQ</button>
       <button class="tab" data-tab="roll">钢琴卷帘</button>
       <button class="tab" data-tab="lyr">歌词对齐</button>
       <button class="tab" data-tab="ana">分析器</button>
@@ -227,12 +243,16 @@ svg.auto circle{cursor:grab}
     </div>
     <div class="pane" id="pMix"><div class="mixer" id="mixer"></div></div>
     <div class="pane" id="pClip" hidden><div class="insp" id="insp"></div></div>
+    <div class="pane" id="pEq" hidden><div class="eqwrap"><canvas id="eqc"></canvas>
+      <div class="card"><h5>参数 EQ <select id="eqTrack" class="tsel" style="flex:0 1 120px"></select></h5><div class="eqb" id="eqInfo"></div>
+        <div class="hint">拖动圆点：左右改频率，上下改增益。滚轮改宽窄（Q），双击归零。1 号是低切（高通）。</div><button id="eqReset">重置这条音轨的 EQ</button></div></div></div>
     <div class="pane" id="pRoll" hidden>
       <div class="rbar"><b id="rName">未选择 MIDI 片段</b>
         <span class="lbl">音色</span><select id="rInst"></select>
         <span class="lbl">量化</span><select id="rQ"><option value="1">1/4</option><option value="0.5">1/8</option><option value="0.25" selected>1/16</option></select>
         <span class="lbl">音长</span><select id="rLen"><option value="0.25">1/16</option><option value="0.5" selected>1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">全音符</option></select>
         <span class="lbl">力度</span><input id="rVel" type="range" min="0.1" max="1" step="0.05" value="0.8" style="width:70px">
+        <button id="rQuant" title="把音符起点对齐到量化格线">量化音符</button>
         <button id="rClear">清空音符</button>
         <span class="hint">点空白处画音符，拖动移动，拖右边缘改长度，右键或双击删除。双击时间线上的 MIDI 片段可打开。</span></div>
       <div class="rwrap" id="rwrap"><div class="rin"><canvas id="rk"></canvas><canvas id="rg"></canvas></div></div>
@@ -296,8 +316,8 @@ const uid=()=>Math.random().toString(36).slice(2,9);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const COLORS=['#f2a93b','#5aa9e6','#7bd389','#e07a9a','#b18cf2','#4fd1c5','#f0e370','#ff8a5c'];
 const PR=300; // waveform peaks per second
-const S={bpm:100,pps:70,snap:true,met:false,loop:false,loopA:0,loopB:0,master:0.9,limit:true,tracks:[],clips:[],lyrics:[],sel:null,selTrack:null,rollClip:null,pos:0};
-const INST={piano:'电钢琴',pluck:'拨弦',pad:'合成铺底',bass:'合成贝斯',lead:'主音合成',drums:'鼓机'};
+const S={markers:[],multi:new Set(),bpm:100,pps:70,snap:true,met:false,loop:false,loopA:0,loopB:0,master:0.9,limit:true,tracks:[],clips:[],lyrics:[],sel:null,selTrack:null,rollClip:null,pos:0};
+const INST={gpiano:'钢琴（取样）',rhodes:'电钢琴（取样）',strings:'弦乐（取样）',guitar:'尼龙吉他（取样）',ebass:'电贝斯（取样）',piano:'合成电钢琴',pluck:'拨弦',pad:'合成铺底',bass:'合成贝斯',lead:'主音合成',drums:'鼓机'};
 const BUF=new Map();
 let actx=null,mix=null,srcs=[],playing=false,ctx0=0,pos0=0,tapMode=false,tapIdx=0;
 const undoS=[],redoS=[];
@@ -331,7 +351,7 @@ function drumHit(ac,dest,p,t,v){const out=[],g=ac.createGain();g.connect(dest);c
   else{const s=ac.createBufferSource();s.buffer=noiseOf(ac);const f=ac.createBiquadFilter();f.type='highpass';f.frequency.value=7500;s.connect(f).connect(g);const d=p===46?0.32:0.06;A.setValueAtTime(0.3*v,t);A.exponentialRampToValueAtTime(0.001,t+d);s.start(t,Math.random()*0.5,d+0.02);out.push(s)}
   return out}
 const DRUMNAME={36:'底鼓',38:'军鼓',39:'拍手',42:'闭镲',46:'开镲'};
-function synthNote(ac,dest,inst,p,t,d,v){if(inst==='drums')return drumHit(ac,dest,p,t,v);
+function synthNote(ac,dest,inst,p,t,d,v){if(SAMPLED[inst]){const sm=SMP.get(inst);if(sm&&sm.state==='ready')return sampledNote(ac,dest,inst,p,t,d,v);loadInst(inst);inst='piano'}if(inst==='drums')return drumHit(ac,dest,p,t,v);
   const f=mf(p),g=ac.createGain(),out=[],A=g.gain;g.connect(dest);
   const osc=(type,fr,det)=>{const o=ac.createOscillator();o.type=type;o.frequency.value=fr;o.detune.value=det||0;out.push(o);return o};
   const lp=(fr,q)=>{const b=ac.createBiquadFilter();b.type='lowpass';b.frequency.value=fr;b.Q.value=q||0.7;b.connect(g);return b};
@@ -343,9 +363,9 @@ function synthNote(ac,dest,inst,p,t,d,v){if(inst==='drums')return drumHit(ac,des
   else{const l=lp(4000,1);l.frequency.setValueAtTime(4000,t);l.frequency.exponentialRampToValueAtTime(500,t+0.3);osc('triangle',f).connect(l);osc('sawtooth',f).connect(l);A.linearRampToValueAtTime(0.38*v,t+0.003);A.setTargetAtTime(0,t+0.004,0.22);rel=0.1}
   A.setTargetAtTime(0,t+d,rel);const end=t+d+rel*6;for(const o of out){o.start(t);o.stop(end)}return out}
 function preview(inst,p,v){const ac=ensureCtx();const g=ac.createGain();g.gain.value=0.7;g.connect(ac.destination);synthNote(ac,g,inst,p,ac.currentTime+0.01,0.3,v||0.8)}
-const snap=()=>JSON.stringify({tracks:S.tracks,clips:S.clips,lyrics:S.lyrics});
+const snap=()=>JSON.stringify({tracks:S.tracks,clips:S.clips,lyrics:S.lyrics,markers:S.markers});
 function pushUndo(){undoS.push(snap());if(undoS.length>100)undoS.shift();redoS.length=0}
-function restore(j){const o=JSON.parse(j);S.tracks=o.tracks;S.clips=o.clips;S.lyrics=o.lyrics;if(!S.clips.find(c=>c.id===S.sel))S.sel=null;renderAll();rebuildIfPlaying()}
+function restore(j){const o=JSON.parse(j);S.tracks=o.tracks;S.clips=o.clips;S.lyrics=o.lyrics;S.markers=o.markers||[];S.multi.clear();if(!S.clips.find(c=>c.id===S.sel))S.sel=null;renderAll();rebuildIfPlaying()}
 function undo(){if(!undoS.length)return toast('没有可撤销的操作');redoS.push(snap());restore(undoS.pop())}
 function redo(){if(!redoS.length)return;undoS.push(snap());restore(redoS.pop())}
 const songEnd=()=>S.clips.reduce((m,c)=>Math.max(m,c.start+c.dur),0);
@@ -359,12 +379,13 @@ function buildMix(ac){
   const rev=ac.createConvolver();rev.buffer=makeIR(ac);const revR=ac.createGain();revR.gain.value=0.8;rev.connect(revR).connect(master);
   const dly=ac.createDelay(3);dly.delayTime.value=beat()*0.75;const fb=ac.createGain();fb.gain.value=0.35;const dlp=ac.createBiquadFilter();dlp.type='lowpass';dlp.frequency.value=3500;dly.connect(dlp).connect(fb).connect(dly);dlp.connect(master);
   const nodes={};
-  for(const t of S.tracks){const n={};n.in=ac.createGain();n.lo=ac.createBiquadFilter();n.lo.type='lowshelf';n.lo.frequency.value=180;n.mid=ac.createBiquadFilter();n.mid.type='peaking';n.mid.frequency.value=1200;n.mid.Q.value=0.9;n.hi=ac.createBiquadFilter();n.hi.type='highshelf';n.hi.frequency.value=5000;
+  for(const t of S.tracks){const n={};n.in=ac.createGain();n.eqs=peqOf(t).map(()=>ac.createBiquadFilter());
     n.comp=ac.createDynamicsCompressor();n.comp.attack.value=0.005;n.comp.release.value=0.15;n.make=ac.createGain();n.pan=ac.createStereoPanner();n.auto=ac.createGain();n.vol=ac.createGain();n.an=ac.createAnalyser();n.an.fftSize=2048;n.sr=ac.createGain();n.sd=ac.createGain();
-    n.in.connect(n.lo).connect(n.mid).connect(n.hi).connect(n.comp).connect(n.make).connect(n.pan).connect(n.auto).connect(n.vol).connect(master);n.vol.connect(n.an);n.vol.connect(n.sr).connect(rev);n.vol.connect(n.sd).connect(dly);nodes[t.id]=n}
+    n.eqs.reduce((a,b)=>a.connect(b),n.in).connect(n.comp).connect(n.make).connect(n.pan).connect(n.auto).connect(n.vol).connect(master);n.vol.connect(n.an);n.vol.connect(n.sr).connect(rev);n.vol.connect(n.sd).connect(dly);nodes[t.id]=n}
+  if(ac.__duck)for(const t of S.tracks){const n=nodes[t.id],k=t.duckSrc&&nodes[t.duckSrc];if(!n||!k||t.duckSrc===t.id)continue;const d=new AudioWorkletNode(ac,'duck',{numberOfInputs:2,numberOfOutputs:1,outputChannelCount:[2]});n.auto.disconnect();n.auto.connect(d,0,0);k.make.connect(d,0,1);d.connect(n.vol);n.duck=d}
   const m={ac,master,lim,man,spec,dly,nodes};applyParams(m,true);return m}
 function applyParams(m=mix,now){if(!m)return;const ac=m.ac,T=ac.currentTime,set=(p,v)=>now?p.value=v:p.setTargetAtTime(v,T,0.015);const any=S.tracks.some(t=>t.solo);
-  for(const t of S.tracks){const n=m.nodes[t.id];if(!n)continue;const aud=!t.mute&&(!any||t.solo);set(n.vol.gain,aud?t.vol:0);set(n.pan.pan,t.pan);set(n.lo.gain,t.eq[0]);set(n.mid.gain,t.eq[1]);set(n.hi.gain,t.eq[2]);
+  for(const t of S.tracks){const n=m.nodes[t.id];if(!n)continue;const aud=!t.mute&&(!any||t.solo);set(n.vol.gain,aud?t.vol:0);set(n.pan.pan,t.pan);peqOf(t).forEach((b,i)=>{const f=n.eqs[i];if(!f)return;if(f.type!==b.type)f.type=b.type;set(f.frequency,b.f);if(b.g!=null)set(f.gain,b.g);set(f.Q,b.q||0.71)});if(n.duck)set(n.duck.parameters.get('amount'),t.duckAmt??0.6);
     n.comp.threshold.value=-t.comp*40;n.comp.ratio.value=1+t.comp*11;set(n.make.gain,1+t.comp*1.2);set(n.sr.gain,t.rev);set(n.sd.gain,t.dly)}
   set(m.master.gain,S.master);set(m.dly.delayTime,beat()*0.75);m.lim.threshold.value=S.limit?-3:0;m.lim.ratio.value=S.limit?20:1}
 function scheduleClips(ac,m,from,when,until){const out=[];scheduleAuto(m,from,when);
@@ -378,8 +399,8 @@ function scheduleClips(ac,m,from,when,until){const out=[];scheduleAuto(m,from,wh
     src.start(at,offs,dur);out.push(src)}
   return out}
 function scheduleMet(ac,m,from,when,until){const out=[];const b=beat();let i=Math.ceil(from/b-1e-6);for(;i*b<until;i++){const t=when+(i*b-from);const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=i%4===0?1600:1000;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.4,t+0.002);g.gain.exponentialRampToValueAtTime(0.0001,t+0.05);o.connect(g).connect(m.master);o.start(t);o.stop(t+0.06);out.push(o)}return out}
-function ensureCtx(){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();return actx}
-function play(){const ac=ensureCtx();stopSources();mix=buildMix(ac);const when=ac.currentTime+0.06;const end=S.loop?S.loopB:Math.max(songEnd(),S.pos)+0.5;
+function ensureCtx(){if(!actx){actx=new (window.AudioContext||window.webkitAudioContext)();ensureWorklet(actx).then(ok=>{if(ok&&S.tracks.some(t=>t.duckSrc))rebuildIfPlaying()})}if(actx.state==='suspended')actx.resume();return actx}
+function play(){const ac=ensureCtx();preloadUsed();stopSources();mix=buildMix(ac);const when=ac.currentTime+0.06;const end=S.loop?S.loopB:Math.max(songEnd(),S.pos)+0.5;
   if(S.loop&&(S.pos<S.loopA||S.pos>=S.loopB))S.pos=S.loopA;
   srcs=scheduleClips(ac,mix,S.pos,when,S.loop?S.loopB:null);if(S.met)srcs.push(...scheduleMet(ac,mix,S.pos,when,S.pos+600));ctx0=when;pos0=S.pos;playing=true;setPlayIcon()}
 function stopSources(){for(const s of srcs){try{s.stop()}catch(e){}}srcs=[];if(mix){const old=mix.master;setTimeout(()=>{try{old.disconnect()}catch(e){}},80)}mix=null}
@@ -393,7 +414,7 @@ function setPlayIcon(){$('#playIco').innerHTML=playing?'<path d="M3 2h4v12H3zM9 
 
 /* ---------- rendering ---------- */
 const W=()=>Math.max(songEnd()+40,90)*S.pps;
-function renderAll(){renderTracks();renderMixer();renderLyrics();layout();renderRoll();if(!$('#pAna').hidden)fillAnaSrc()}
+function renderAll(){renderTracks();renderMixer();renderLyrics();renderMarkers();layout();if(!$('#pEq').hidden)renderEQ();renderRoll();if(!$('#pAna').hidden)fillAnaSrc()}
 function layout(){const w=W();$('#content').style.width=`calc(var(--hw) + ${w}px)`;$$('.lane').forEach(l=>l.style.width=w+'px');drawRuler();drawGrids();drawAutos();updatePos();$('.empty')&&($('.empty').hidden=S.clips.length>0)}
 function renderTracks(){const R=$('#rows');R.innerHTML='';
   for(const t of S.tracks){const row=document.createElement('div');row.className='row trow';row.dataset.tid=t.id;
@@ -414,7 +435,7 @@ function renderTracks(){const R=$('#rows');R.innerHTML='';
   if(!S.tracks.length)R.innerHTML='<div class="empty">点击「+ 音轨」或「导入音频」开始</div>'}
 const instOpts=v=>Object.entries(INST).map(([k,n])=>`<option value="${k}" ${k===v?'selected':''}>${n}</option>`).join('');
 document.addEventListener('change',e=>{const id=e.target.dataset&&e.target.dataset.inst;if(!id)return;const t=S.tracks.find(t=>t.id===id);if(!t)return;pushUndo();t.inst=e.target.value;$$(`[data-inst="${id}"]`).forEach(s=>s.value=t.inst);
-  const rc=S.clips.find(c=>c.id===S.rollClip);if(rc&&rc.tid===id)$('#rInst').value=t.inst;rebuildIfPlaying();preview(t.inst,t.inst==='drums'?36:60)});
+  const rc=S.clips.find(c=>c.id===S.rollClip);if(rc&&rc.tid===id)$('#rInst').value=t.inst;if(SAMPLED[t.inst])loadInst(t.inst).then(()=>preview(t.inst,60));rebuildIfPlaying();preview(t.inst,t.inst==='drums'?36:60)});
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function syncTrackBtns(t){$$(`.trow[data-tid="${t.id}"] .m, .strip[data-tid="${t.id}"] .m`).forEach(b=>b.classList.toggle('on',t.mute));$$(`.trow[data-tid="${t.id}"] .s, .strip[data-tid="${t.id}"] .s`).forEach(b=>b.classList.toggle('on',t.solo))}
 function delTrack(id){pushUndo();S.tracks=S.tracks.filter(t=>t.id!==id);S.clips=S.clips.filter(c=>c.tid!==id);renderAll();rebuildIfPlaying()}
@@ -440,24 +461,25 @@ function drawWave(cv,c,t){const b=BUF.get(c.bid);if(!b)return;const w=Math.max(1
   g.fillStyle='rgba(0,0,0,.35)';if(c.fin>0.02){g.beginPath();g.moveTo(0,0);g.lineTo(c.fin*S.pps,0);g.lineTo(0,h);g.fill()}if(c.fout>0.02){g.beginPath();g.moveTo(w,0);g.lineTo(w-c.fout*S.pps,0);g.lineTo(w,h);g.fill()}}
 
 /* ---------- interactions: clips ---------- */
-function select(id){S.sel=id;$$('.clip').forEach(e=>e.classList.toggle('sel',e.dataset.cid===id));const c=S.clips.find(c=>c.id===id);
+function select(id,add){if(add&&id){if(S.sel&&!S.multi.size)S.multi.add(S.sel);S.multi.has(id)?S.multi.delete(id):S.multi.add(id);if(!S.multi.has(id))id=[...S.multi].pop()||null}else S.multi.clear();S.sel=id;const ids=selIds();$$('.clip').forEach(e=>e.classList.toggle('sel',ids.includes(e.dataset.cid)));const c=S.clips.find(c=>c.id===id);
   $('#selInfo').textContent=c?`选中：${c.name} · 起点 ${fmtShort(c.start)} · 长度 ${c.dur.toFixed(2)}s · 滚轮+Shift 调片段增益`:'';if(c){S.selTrack=c.tid;if(c.kind==='midi'&&S.rollClip!==c.id){S.rollClip=c.id;renderRoll()}}renderInspector()}
 function laneAtY(y){for(const l of $$('.trow .lane')){const r=l.getBoundingClientRect();if(y>=r.top&&y<r.bottom)return l}return null}
-function clipDown(e,c,el){if(e.button!==0)return;e.stopPropagation();e.preventDefault();select(c.id);
+function clipDown(e,c,el){if(e.button!==0)return;e.stopPropagation();e.preventDefault();if(e.shiftKey||e.ctrlKey||e.metaKey){select(c.id,true);return}const grp=S.multi.size>1&&S.multi.has(c.id)?S.clips.filter(x=>S.multi.has(x.id)&&x.id!==c.id).map(x=>({c:x,s:x.start})):[];if(grp.length)S.sel=c.id;else select(c.id);
   const r=el.getBoundingClientRect(),x=e.clientX-r.left,cl=e.target.classList;let mode='move';
   if(cl.contains('fi'))mode='fin';else if(cl.contains('fo'))mode='fout';else if(cl.contains('eL')||x<7)mode='l';else if(cl.contains('eR')||x>r.width-7)mode='r';
   if(c.kind==='midi'&&mode==='l')mode='move';if(c.kind==='midi')S.rollClip=c.id,renderRoll();
   const before=snap(),o={...c},sx=e.clientX,blen=clipLen(c);let moved=false;el.setPointerCapture(e.pointerId);
   const mv=ev=>{const dx=(ev.clientX-sx)/S.pps;if(Math.abs(ev.clientX-sx)>2)moved=true;if(!moved)return;
-    if(mode==='move'){c.start=Math.max(0,snapT(o.start+dx,ev));const l=laneAtY(ev.clientY);if(l&&l.dataset.tid!==c.tid){const nt=S.tracks.find(t=>t.id===l.dataset.tid);if(nt&&(nt.kind==='inst')===(c.kind==='midi')){c.tid=l.dataset.tid;l.appendChild(el)}}}
+    if(mode==='move'&&grp.length){const lo=Math.min(o.start,...grp.map(g=>g.s));const d=Math.max(-lo,snapT(o.start+dx,ev)-o.start);c.start=o.start+d;for(const g of grp){g.c.start=g.s+d;const ge=$(`.clip[data-cid="${g.c.id}"]`);ge&&placeClip(ge,g.c)}}
+    else if(mode==='move'){c.start=Math.max(0,snapT(o.start+dx,ev));const l=laneAtY(ev.clientY);if(l&&l.dataset.tid!==c.tid){const nt=S.tracks.find(t=>t.id===l.dataset.tid);if(nt&&(nt.kind==='inst')===(c.kind==='midi')){c.tid=l.dataset.tid;l.appendChild(el)}}}
     else if(mode==='l'){let ns=snapT(o.start+dx,ev);ns=clamp(ns,Math.max(0,o.start-o.off),o.start+o.dur-0.05);c.off=o.off+(ns-o.start);c.dur=o.dur-(ns-o.start);c.start=ns;c.fin=Math.min(c.fin,c.dur-c.fout)}
     else if(mode==='r'){let ne=snapT(o.start+o.dur+dx,ev);ne=clamp(ne,o.start+0.05,o.start+(blen-o.off));c.dur=ne-o.start;c.fout=Math.min(c.fout,c.dur-c.fin)}
     else if(mode==='fin')c.fin=clamp(o.fin+dx,0,c.dur-c.fout);else if(mode==='fout')c.fout=clamp(o.fout-dx,0,c.dur-c.fin);
     placeClip(el,c)};
   const up=()=>{el.removeEventListener('pointermove',mv);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',up);
-    if(moved){undoS.push(before);redoS.length=0;layout();select(c.id);rebuildIfPlaying();renderMixerMeters()}};
+    if(moved){undoS.push(before);redoS.length=0;layout();if(!grp.length)select(c.id);renderInspector();rebuildIfPlaying();renderMixerMeters()}};
   el.addEventListener('pointermove',mv);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up)}
-function bindLane(lane,t){lane.addEventListener('pointerdown',e=>{if(e.target!==lane&&!e.target.classList.contains('grid'))return;select(null);S.selTrack=t.id;$$('.trow .hdr').forEach(h=>h.classList.toggle('sel',h.parentElement.dataset.tid===t.id));const r=lane.getBoundingClientRect();seek(snapT((e.clientX-r.left)/S.pps,e))});
+function bindLane(lane,t){lane.addEventListener('pointerdown',e=>{if(e.target!==lane&&!e.target.classList.contains('grid'))return;marquee(e);if(!e.shiftKey)select(null);S.selTrack=t.id;$$('.trow .hdr').forEach(h=>h.classList.toggle('sel',h.parentElement.dataset.tid===t.id));const r=lane.getBoundingClientRect();seek(snapT((e.clientX-r.left)/S.pps,e))});
   lane.addEventListener('dragover',e=>{e.preventDefault();lane.classList.add('drop')});lane.addEventListener('dragleave',()=>lane.classList.remove('drop'));
   lane.addEventListener('drop',async e=>{e.preventDefault();lane.classList.remove('drop');const r=lane.getBoundingClientRect();const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('audio')||/\.(wav|mp3|ogg|flac|m4a|aac|webm)$/i.test(f.name));if(!files.length)return;importFiles(files,t.id,snapT((e.clientX-r.left)/S.pps))})}
 function splitSel(){const c=S.clips.find(c=>c.id===S.sel);if(!c)return toast('先点选一个片段');const p=curPos();if(p<=c.start+0.01||p>=c.start+c.dur-0.01)return toast('播放头需要在片段内部');
@@ -465,8 +487,8 @@ function splitSel(){const c=S.clips.find(c=>c.id===S.sel);if(!c)return toast('�
   if(c.kind==='midi'){n=cloneClip(c);n.start=p;n.dur=c.dur-lt;n.notes=c.notes.filter(x=>x.s>=lt).map(x=>({...x,s:x.s-lt}));c.notes=c.notes.filter(x=>x.s<lt).map(x=>({...x,d:Math.min(x.d,lt-x.s)}));c.dur=lt}
   else{n={...c,id:uid(),start:p,off:c.off+lt,dur:c.dur-lt,fin:0.01};c.dur=lt;c.fout=0.01}
   S.clips.push(n);renderTracks();select(n.id);rebuildIfPlaying()}
-function delSel(){if(!S.sel)return;pushUndo();S.clips=S.clips.filter(c=>c.id!==S.sel);if(S.rollClip===S.sel)S.rollClip=null;S.sel=null;renderTracks();layout();select(null);renderRoll();rebuildIfPlaying()}
-function dupSel(){const c=S.clips.find(c=>c.id===S.sel);if(!c)return;pushUndo();const n=cloneClip(c);n.start=c.start+c.dur;S.clips.push(n);renderTracks();layout();select(n.id);rebuildIfPlaying()}
+function delSel(){const ids=selIds();if(!ids.length)return;pushUndo();S.clips=S.clips.filter(c=>!ids.includes(c.id));if(ids.includes(S.rollClip))S.rollClip=null;S.sel=null;S.multi.clear();renderTracks();layout();select(null);renderRoll();rebuildIfPlaying()}
+function dupSel(){const cs=S.clips.filter(c=>selIds().includes(c.id));if(!cs.length)return;pushUndo();const a=Math.min(...cs.map(c=>c.start)),b=Math.max(...cs.map(c=>c.start+c.dur)),ns=cs.map(c=>{const n=cloneClip(c);n.start=c.start+(b-a);S.clips.push(n);return n});renderTracks();layout();select(ns[0].id);ns.slice(1).forEach(n=>select(n.id,true));rebuildIfPlaying()}
 
 /* ---------- ruler & playhead ---------- */
 function drawRuler(){const sc=$('#scroller'),cv=$('#ruler'),hw=$('.rrow .hdr').offsetWidth,vw=Math.max(10,sc.clientWidth-hw),sl=sc.scrollLeft,dpr=Math.min(2,devicePixelRatio||1);
@@ -495,6 +517,8 @@ function stripHTML(t){return `<div class="strip" data-tid="${t.id}" style="--c:$
   <div class="kv"><span>混响</span><input type="range" min="0" max="1" step="0.01" data-tid="${t.id}" data-k="rev" value="${t.rev}"></div>
   <div class="kv"><span>延迟</span><input type="range" min="0" max="1" step="0.01" data-tid="${t.id}" data-k="dly" value="${t.dly}"></div>
   <div class="kv"><span>声像</span><input type="range" min="-1" max="1" step="0.01" data-tid="${t.id}" data-k="pan" value="${t.pan}"></div>
+  <div class="kv" title="侧链压缩：选一条音轨（通常是鼓），它一响，这条音轨就自动让开"><span>侧链</span><select class="tsel" data-duck="${t.id}"><option value="">无</option>${S.tracks.filter(x=>x.id!==t.id).map(x=>`<option value="${x.id}" ${t.duckSrc===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>
+  <div class="kv"><span>闪避</span><input type="range" min="0" max="1" step="0.01" data-tid="${t.id}" data-k="duckAmt" value="${t.duckAmt??0.6}"></div>
   <div class="fz"><input type="range" min="0" max="1.2" step="0.01" data-tid="${t.id}" data-k="vol" value="${t.vol}" aria-label="推子"><div class="vm" data-m="${t.id}"><i></i></div><span class="db" data-db="${t.id}">${dbs(t.vol)}</span></div>
   <div class="sb"><button class="sbtn m ${t.mute?'on':''}">M</button><button class="sbtn s ${t.solo?'on':''}">S</button></div></div>`}
 const dbs=v=>v<=0.001?'-∞':(20*Math.log10(v)).toFixed(1);
@@ -505,8 +529,8 @@ function renderMixerMeters(){}
 function setMaster(v){S.master=v;$('#mvol').value=v;const m2=$('#mvol2');if(m2)m2.value=v;$('#mdb')&&($('#mdb').textContent=dbs(v));applyParams()}
 $('#mvol').oninput=e=>setMaster(+e.target.value);
 document.addEventListener('input',e=>{const el=e.target;if(!el.dataset||!el.dataset.k||!el.dataset.tid)return;const t=S.tracks.find(t=>t.id===el.dataset.tid);if(!t)return;const k=el.dataset.k,v=+el.value;
-  if(k.startsWith('eq'))t.eq[+k[2]]=v;else t[k]=v;$$(`[data-tid="${t.id}"][data-k="${k}"]`).forEach(o=>{if(o!==el)o.value=v});if(k==='vol')$(`[data-db="${t.id}"]`).textContent=dbs(v);applyParams()});
-document.addEventListener('dblclick',e=>{const el=e.target;if(el.dataset&&el.dataset.k&&el.dataset.tid){const def={vol:0.8,pan:0,eq0:0,eq1:0,eq2:0,comp:0,rev:0,dly:0}[el.dataset.k];el.value=def;el.dispatchEvent(new Event('input',{bubbles:true}))}});
+  if(k.startsWith('eq')){t.eq[+k[2]]=v;peqOf(t)[[1,3,4][+k[2]]].g=v;if(!$('#pEq').hidden)renderEQ()}else t[k]=v;$$(`[data-tid="${t.id}"][data-k="${k}"]`).forEach(o=>{if(o!==el)o.value=v});if(k==='vol')$(`[data-db="${t.id}"]`).textContent=dbs(v);applyParams()});
+document.addEventListener('dblclick',e=>{const el=e.target;if(el.dataset&&el.dataset.k&&el.dataset.tid){const def={duckAmt:0.6,vol:0.8,pan:0,eq0:0,eq1:0,eq2:0,comp:0,rev:0,dly:0}[el.dataset.k];el.value=def;el.dispatchEvent(new Event('input',{bubbles:true}))}});
 
 /* meters */
 const mbuf=new Float32Array(1024);
@@ -516,7 +540,7 @@ function tick(){if(playing){const p=curPos();if(S.loop&&p>=S.loopB){S.pos=S.loop
     const sc=$('#scroller'),hw=$('.rrow .hdr').offsetWidth,x=p*S.pps;if(x<sc.scrollLeft||x>sc.scrollLeft+sc.clientWidth-hw-40)sc.scrollLeft=Math.max(0,x-60)}
   for(const t of S.tracks){const v=(mix&&mix.nodes[t.id])?level(mix.nodes[t.id].an):0;mlev[t.id]=Math.max(v,(mlev[t.id]||0)*0.9);$$(`[data-m="${t.id}"] i`).forEach(i=>i.style.height=(mlev[t.id]*100)+'%')}
   const mv=mix?level(mix.man):0;mlev.m=Math.max(mv,(mlev.m||0)*0.9);$('#mmL').style.width=(mlev.m*100)+'%';$$('[data-m="master"] i').forEach(i=>i.style.height=(mlev.m*100)+'%');
-  anaF++;if(!$('#pAna').hidden&&anaF%3===0)updateAna();if(playing&&!$('#pRoll').hidden&&anaF%3===0)renderRoll();
+  anaF++;if(!$('#pAna').hidden&&anaF%3===0)updateAna();if(playing&&!$('#pEq').hidden&&anaF%3===0)drawEQ();if(playing&&!$('#pRoll').hidden&&anaF%3===0)renderRoll();
   updatePos();requestAnimationFrame(tick)}
 
 /* ---------- lyrics ---------- */
@@ -642,16 +666,16 @@ function updateAna(){if(!mix)return;const sp=mix.spec,cv=$('#spec'),w=cv.clientW
 function b64(u8){let s='';for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s)}
 function unb64(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
 $('#bSave').onclick=async()=>{const used=new Set(S.clips.filter(c=>c.bid).map(c=>c.bid)),audio={};for(const id of used){const b=BUF.get(id);if(b)audio[id]={name:b.name,wav:b64(encodeWAV(b.buf))}}
-  const proj={app:'音乐实验室工作站',version:2,bpm:S.bpm,master:S.master,limit:S.limit,tracks:S.tracks,clips:S.clips,lyrics:S.lyrics,audio};if(await saveFile('my-project.json',JSON.stringify(proj),'application/json'))toast('工程已保存，音频也一起存进去了')};
+  const proj={app:'音乐实验室工作站',version:2,bpm:S.bpm,master:S.master,limit:S.limit,tracks:S.tracks,clips:S.clips,lyrics:S.lyrics,markers:S.markers,audio};if(await saveFile('my-project.json',JSON.stringify(proj),'application/json'))toast('工程已保存，音频也一起存进去了')};
 $('#bOpen').onclick=()=>$('#projFile').click();
 $('#projFile').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;try{toast('正在打开工程…',8000);const o=JSON.parse(await f.text());if(!o.tracks||!o.clips)throw new Error('这不是本工作站保存的工程文件');pause();
   for(const[id,a]of Object.entries(o.audio||{})){const ac=actx||new OfflineAudioContext(2,44100,44100);const buf=await new Promise((res,rej)=>ac.decodeAudioData(unb64(a.wav).buffer,res,rej));BUF.set(id,{buf,name:a.name,pk:peaks(buf)})}
-  pushUndo();S.bpm=o.bpm||100;$('#bpm').value=S.bpm;S.limit=o.limit!==false;$('#bLim').classList.toggle('on',S.limit);S.tracks=o.tracks.map(t=>({kind:'audio',...t}));S.clips=o.clips.filter(c=>c.kind==='midi'||BUF.has(c.bid));S.lyrics=o.lyrics||[];S.sel=null;S.rollClip=null;S.pos=0;lastK=-2;
+  pushUndo();S.bpm=o.bpm||100;$('#bpm').value=S.bpm;S.limit=o.limit!==false;$('#bLim').classList.toggle('on',S.limit);S.tracks=o.tracks.map(t=>({kind:'audio',...t}));S.clips=o.clips.filter(c=>c.kind==='midi'||BUF.has(c.bid));S.lyrics=o.lyrics||[];S.markers=o.markers||[];S.multi.clear();preloadUsed();S.sel=null;S.rollClip=null;S.pos=0;lastK=-2;
   $('#lyrText').value=S.lyrics.map(l=>l.text).join('\n');renderAll();setMaster(o.master??0.9);toast('工程已打开')}catch(err){toast('打开失败：'+err.message)}};
 
 /* ---------- recording ---------- */
 let rec=null;
-async function toggleRec(){if(rec){rec.mr.stop();return}
+async function toggleRec(){if(rec){rec.mr.stop();return}if(recMidi){stopMidiRec();return}{const it=S.tracks.find(t=>t.id===S.selTrack&&t.kind==='inst');if(it){startMidiRec(it);return}}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.MediaRecorder)return toast('这个浏览器不支持录音');
   let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}catch(e){return toast('拿不到麦克风权限。网页版不开放麦克风，请用离线 HTML 版录音',4500)}
   let t=S.tracks.find(t=>t.id===S.selTrack&&t.kind!=='inst');if(!t){pushUndo();t=newTrack('录音');S.selTrack=t.id;renderAll()}
@@ -753,7 +777,7 @@ function scaleBuf(buf,g){for(let c=0;c<buf.numberOfChannels;c++){const d=buf.get
 /* bring a rendered mix to a loudness target with a -1 dB peak ceiling; two passes because limiting lowers loudness a little */
 async function masterAsync(buf,target){for(let pass=0;pass<2;pass++){const L=await measureLUFS(buf);if(!isFinite(L))break;if(Math.abs(L-target)<0.2)break;scaleBuf(buf,10**((target-L)/20));limitBuf(buf,-1)}
   return{lufs:await measureLUFS(buf),peak:peakDb(buf)}}
-async function renderMix(){const end=songEnd(),sr=44100,len=Math.ceil((end+2.5)*sr),oc=new OfflineAudioContext(2,len,sr),m=buildMix(oc);scheduleClips(oc,m,0,0,null);return await oc.startRendering()}
+async function renderMix(){await preloadUsed();const end=songEnd(),sr=44100,len=Math.ceil((end+2.5)*sr),oc=new OfflineAudioContext(2,len,sr);await ensureWorklet(oc);const m=buildMix(oc);scheduleClips(oc,m,0,0,null);return await oc.startRendering()}
 
 /* ---------- tempo and key detection ---------- */
 const KK_MAJ=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88],KK_MIN=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
@@ -840,6 +864,115 @@ function autoDown(e,t,sv){if(e.button!==0)return;e.preventDefault();e.stopPropag
 $('#aMeas').onclick=async e=>{if(!songEnd())return toast('时间线上还没有音频');const b=e.target;b.disabled=true;b.textContent='测量中…';try{const out=await renderMix(),L=await measureLUFS(out),pk=peakDb(out);
   $('#aLufs').textContent=`${isFinite(L)?L.toFixed(1):'-∞'} LUFS · 峰值 ${pk.toFixed(1)} dB`;toast(L>-10?'很响了，串流平台会把它调小':L<-18?'偏小声，导出时可选「母带 -14 LUFS」':'响度适中')}catch(err){toast('测量失败：'+err.message)}finally{b.disabled=false;b.textContent='测量整首'}};
 
+/* ---------- sampled instruments (FluidR3 GM, MIT; loaded on demand, synth fallback) ---------- */
+const SAMPLED={gpiano:['acoustic_grand_piano',24,96,0.35],rhodes:['electric_piano_1',36,96,0.4],strings:['string_ensemble_1',36,96,0.45],guitar:['acoustic_guitar_nylon',40,84,0.3],ebass:['electric_bass_finger',28,64,0.12]};
+const SAMPLE_BASES=window.MUSICLAB_SAMPLES?[window.MUSICLAB_SAMPLES]:['https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/','https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@gh-pages/FluidR3_GM/'];
+const FLAT=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'],smpName=m=>FLAT[m%12]+(Math.floor(m/12)-1);
+const SMP=new Map();
+function loadInst(inst){const def=SAMPLED[inst];if(!def)return Promise.resolve(false);let s=SMP.get(inst);if(s)return s.promise;
+  s={state:'loading',notes:new Map()};SMP.set(inst,s);
+  s.promise=(async()=>{const[dir,lo,hi]=def,ms=[];for(let m=lo;m<=hi;m+=3)ms.push(m);const dc=actx||new OfflineAudioContext(1,1,44100);
+    for(const base of SAMPLE_BASES){let ok=0;
+      await Promise.all(ms.map(async m=>{try{const r=await fetch(`${base}${dir}-mp3/${smpName(m)}.mp3`);if(!r.ok)return;const ab=await r.arrayBuffer();s.notes.set(m,await new Promise((res,rej)=>dc.decodeAudioData(ab,res,rej)));ok++}catch(e){}}));
+      if(ok>=ms.length*0.6){s.state='ready';toast(`${INST[inst]} 音色已载入`);rebuildIfPlaying();renderRoll();return true}}
+    s.state='error';toast(`${INST[inst]} 载入失败，暂时用合成音色代替`);return false})();
+  return s.promise}
+function preloadUsed(){return Promise.all([...new Set(S.tracks.filter(t=>t.kind==='inst'&&SAMPLED[t.inst]).map(t=>t.inst))].map(loadInst))}
+function sampledNote(ac,dest,inst,p,t,d,v){const s=SMP.get(inst);let best=null,bd=99;for(const m of s.notes.keys()){const dd=Math.abs(m-p);if(dd<bd){bd=dd;best=m}}
+  const src=ac.createBufferSource();src.buffer=s.notes.get(best);src.playbackRate.value=2**((p-best)/12);const g=ac.createGain(),A=g.gain,rel=SAMPLED[inst][3];
+  A.setValueAtTime(0,t);A.linearRampToValueAtTime(0.9*Math.pow(v,1.4),t+0.004);A.setTargetAtTime(0,t+d,rel);src.connect(g).connect(dest);src.start(t);src.stop(t+d+rel*6);return[src]}
+
+/* ---------- live playing: MIDI keyboard + computer keyboard, MIDI recording ---------- */
+const LIVE=new Map();let liveBus=null,keysOn=false,keyOct=60,recMidi=null;
+function liveTrack(){return S.tracks.find(t=>t.id===S.selTrack&&t.kind==='inst')||S.tracks.find(t=>t.kind==='inst')}
+function liveOn(p,v){const t=liveTrack();if(!t)return toast('先加一条乐器轨（+ 乐器轨）');const ac=ensureCtx();
+  if(!liveBus||liveBus.context!==ac){liveBus=ac.createGain();liveBus.gain.value=0.8;liveBus.connect(ac.destination)}
+  liveOff(p);const dest=(mix&&mix.nodes[t.id])?mix.nodes[t.id].in:liveBus,g=ac.createGain();g.connect(dest);
+  const srcs=synthNote(ac,g,t.inst,p,ac.currentTime+0.005,8,v);LIVE.set(p,{g,srcs,ac});if(recMidi)recMidi.open.set(p,{p,s:curPos(),v:+v.toFixed(2)})}
+function liveOff(p){const n=LIVE.get(p);if(!n)return;LIVE.delete(p);const T=n.ac.currentTime;n.g.gain.setTargetAtTime(0,T,0.05);for(const s of n.srcs){try{s.stop(T+0.5)}catch(e){}}
+  if(recMidi){const o=recMidi.open.get(p);if(o){recMidi.open.delete(p);o.d=Math.max(0.05,curPos()-o.s);recMidi.notes.push(o)}}}
+function onMidiMsg(e){const[st,a,b]=e.data,cmd=st&0xf0;if(cmd===0x90&&b>0)liveOn(a,b/127);else if(cmd===0x80||(cmd===0x90&&b===0))liveOff(a)}
+$('#bMidiIn').onclick=async()=>{if(!navigator.requestMIDIAccess)return toast('这个浏览器不支持 MIDI 键盘，请用 Chrome 或 Edge');
+  try{const acc=await navigator.requestMIDIAccess();const bind=()=>{let n=0;acc.inputs.forEach(i=>{i.onmidimessage=onMidiMsg;n++});$('#bMidiIn').classList.toggle('on',n>0);return n};const n=bind();acc.onstatechange=bind;
+    toast(n?`已连接 ${n} 个 MIDI 设备，弹奏会用选中乐器轨的音色`:'没有找到 MIDI 设备，插上后会自动连接',4000)}catch(e){toast('无法使用 MIDI：'+e.message)}};
+const KEYMAP={a:0,w:1,s:2,e:3,d:4,f:5,t:6,g:7,y:8,h:9,u:10,j:11,k:12,o:13,l:14,p:15,';':16};
+function keyPlay(e,down){const k=e.key.toLowerCase();if(k==='z'||k==='x'){if(down&&!e.repeat){keyOct=clamp(keyOct+(k==='z'?-12:12),24,96);toast('八度：C'+(keyOct/12-1))}return true}
+  if(!(k in KEYMAP))return false;e.preventDefault();if(e.repeat)return true;const p=keyOct+KEYMAP[k];down?liveOn(p,0.8):liveOff(p);return true}
+addEventListener('keyup',e=>{if(keysOn)keyPlay(e,false)});
+$('#bKeys').onclick=()=>{keysOn=!keysOn;$('#bKeys').classList.toggle('on',keysOn);if(keysOn){if(!liveTrack()){pushUndo();const t=newTrack(null,'gpiano');S.selTrack=t.id;renderAll()}preloadUsed();toast('键盘弹奏已开：A W S E D F T G Y H U J K，Z/X 换八度；快捷键暂停使用',4500)}};
+function startMidiRec(t){if(!liveTrack())return;recMidi={tid:t.id,open:new Map(),notes:[]};$('#bRec').classList.add('on');if(!playing)play();toast(`正在录 MIDI 到「${t.name}」：用 MIDI 键盘或电脑键盘弹奏，再按一次「录音」结束`,4500)}
+function stopMidiRec(){const r=recMidi;recMidi=null;$('#bRec').classList.remove('on');for(const p of[...LIVE.keys()])liveOff(p);const end=curPos();
+  for(const o of r.open.values()){o.d=Math.max(0.05,end-o.s);r.notes.push(o)}pause();if(!r.notes.length)return toast('没有录到音符');
+  const bar=beat()*4,st=Math.floor(Math.min(...r.notes.map(n=>n.s))/bar)*bar,en=Math.max(...r.notes.map(n=>n.s+n.d));pushUndo();
+  const c=newMidiClip(r.tid,st,Math.max(bar,Math.ceil((en-st)/bar)*bar),r.notes.map(n=>({p:n.p,s:+(n.s-st).toFixed(4),d:+n.d.toFixed(4),v:n.v})));c.name='录音演奏';renderAll();select(c.id);toast(`录到 ${r.notes.length} 个音符，可在钢琴卷帘里「量化音符」`)}
+$('#rQuant').onclick=()=>{const c=rollClip();if(!c||!c.notes.length)return;pushUndo();const q=+$('#rQ').value*beat();c.notes.forEach(n=>{n.s=Math.max(0,Math.round(n.s/q)*q);n.d=Math.max(q,Math.round(n.d/q)*q)});afterRoll(c);toast('已量化')};
+
+/* ---------- multi-select & marquee ---------- */
+function selIds(){return S.multi.size?[...S.multi]:(S.sel?[S.sel]:[])}
+function marquee(e){const content=$('#content'),cr=content.getBoundingClientRect(),x0=e.clientX,y0=e.clientY,add=e.shiftKey,prev=add?new Set(selIds()):new Set();let box=null;
+  const mv=ev=>{if(!box){if(Math.abs(ev.clientX-x0)+Math.abs(ev.clientY-y0)<6)return;box=document.createElement('div');box.className='marquee';content.appendChild(box)}
+    const r=content.getBoundingClientRect(),l=Math.min(x0,ev.clientX),t=Math.min(y0,ev.clientY),w=Math.abs(ev.clientX-x0),h=Math.abs(ev.clientY-y0);
+    Object.assign(box.style,{left:(l-r.left)+'px',top:(t-r.top)+'px',width:w+'px',height:h+'px'});
+    const ids=new Set(prev);for(const el of $$('.clip')){const b=el.getBoundingClientRect();if(b.right>l&&b.left<l+w&&b.bottom>t&&b.top<t+h)ids.add(el.dataset.cid)}
+    S.multi=ids;S.sel=[...ids].pop()||null;$$('.clip').forEach(x=>x.classList.toggle('sel',ids.has(x.dataset.cid)))};
+  const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up);if(box){box.remove();if(S.multi.size)$('#selInfo').textContent=`已选 ${S.multi.size} 个片段 · 拖动一起移动，Delete 删除，Ctrl+D 复制`}};
+  addEventListener('pointermove',mv);addEventListener('pointerup',up)}
+
+/* ---------- section markers ---------- */
+const MKNAMES=['前奏','主歌','导歌','副歌','主歌 2','副歌 2','桥段','副歌 3','尾奏'];
+function addMarker(){pushUndo();const t=+snapT(curPos()).toFixed(3);S.markers.push({id:uid(),t,name:MKNAMES[S.markers.length%MKNAMES.length]});S.markers.sort((a,b)=>a.t-b.t);renderMarkers()}
+$('#bMk').onclick=addMarker;
+const mkEnd=i=>S.markers[i+1]?S.markers[i+1].t:Math.max(songEnd(),S.markers[i].t+beat()*16);
+function renderMarkers(){const lane=$('#mkLane');if(!lane)return;lane.innerHTML='';S.markers.forEach((m,i)=>{const el=document.createElement('div');el.className='mk';el.textContent=m.name;el.title=`${m.name}（点击跳转，Shift+点击循环这段，拖动移动，双击改名，右键删除）`;
+  el.style.left=m.t*S.pps+'px';el.style.width=Math.max(24,(mkEnd(i)-m.t)*S.pps-2)+'px';
+  el.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();const before=snap(),sx=e.clientX,o=m.t;let moved=false;el.setPointerCapture(e.pointerId);
+    const mv=ev=>{if(Math.abs(ev.clientX-sx)>3)moved=true;if(!moved)return;m.t=+Math.max(0,snapT(o+(ev.clientX-sx)/S.pps,ev)).toFixed(3);el.style.left=m.t*S.pps+'px'};
+    const up=ev=>{el.removeEventListener('pointermove',mv);el.removeEventListener('pointerup',up);if(moved){undoS.push(before);redoS.length=0;S.markers.sort((a,b)=>a.t-b.t);renderMarkers()}
+      else if(ev.shiftKey){S.loop=true;S.loopA=m.t;S.loopB=mkEnd(S.markers.indexOf(m));$('#bLoop').classList.add('on');drawRuler();seek(m.t);toast(`循环「${m.name}」`)}else seek(m.t)};
+    el.addEventListener('pointermove',mv);el.addEventListener('pointerup',up)});
+  el.addEventListener('dblclick',()=>{const n=prompt('段落名称（清空可删除）',m.name);if(n==null)return;pushUndo();if(n.trim())m.name=n.trim();else S.markers=S.markers.filter(x=>x!==m);renderMarkers()});
+  el.addEventListener('contextmenu',e=>{e.preventDefault();pushUndo();S.markers=S.markers.filter(x=>x!==m);renderMarkers()});lane.appendChild(el)})}
+
+/* ---------- sidechain ducking (AudioWorklet; skipped where worklets can't load) ---------- */
+const DUCK_SRC=`class Duck extends AudioWorkletProcessor{static get parameterDescriptors(){return[{name:'amount',defaultValue:0.6,minValue:0,maxValue:1}]}
+constructor(){super();this.env=0;this.a=Math.exp(-1/(0.004*sampleRate));this.r=Math.exp(-1/(0.16*sampleRate))}
+process(ins,outs,p){const x=ins[0],k=ins[1],y=outs[0],amt=p.amount[0],n=y[0].length;
+for(let i=0;i<n;i++){let lv=0;if(k)for(const ch of k){const a=Math.abs(ch[i]||0);if(a>lv)lv=a}this.env=lv>this.env?lv+(this.env-lv)*this.a:lv+(this.env-lv)*this.r;
+const g=1-amt*Math.min(1,this.env*3);for(let c=0;c<y.length;c++){const xc=x&&(x[c]||x[0]);y[c][i]=xc?xc[i]*g:0}}return true}}registerProcessor('duck',Duck)`;
+async function ensureWorklet(ac){if(ac.__duckP)return ac.__duckP;ac.__duckP=(async()=>{try{const url=URL.createObjectURL(new Blob([DUCK_SRC],{type:'text/javascript'}));await ac.audioWorklet.addModule(url);ac.__duck=true}catch(e){ac.__duck=false}return ac.__duck})();return ac.__duckP}
+document.addEventListener('change',e=>{const id=e.target.dataset&&e.target.dataset.duck;if(!id)return;const t=S.tracks.find(t=>t.id===id);if(!t)return;pushUndo();t.duckSrc=e.target.value||null;if(t.duckSrc&&actx&&actx.__duck===false)toast('这个浏览器不支持侧链处理');rebuildIfPlaying()});
+
+/* ---------- parametric EQ with response curve ---------- */
+const EQC=['#8b92a3','#e07a9a','#f2a93b','#7bd389','#5aa9e6'];
+function peqOf(t){if(!t.peq){const e=t.eq||[0,0,0];t.peq=[{type:'highpass',f:20,q:0.71},{type:'lowshelf',f:180,g:e[0]},{type:'peaking',f:500,g:0,q:1},{type:'peaking',f:1200,g:e[1],q:0.9},{type:'highshelf',f:5000,g:e[2]}]}return t.peq}
+let eqTid=null,eqCtx=null,eqFilters=null;const EQN=256,eqFreq=new Float32Array(EQN).map((_,i)=>20*Math.pow(1000,i/(EQN-1))),eqMag=new Float32Array(EQN),eqPh=new Float32Array(EQN);
+const eqX=(f,w)=>Math.log10(f/20)/3*w,eqF=(x,w)=>20*Math.pow(10,x/w*3),eqY=(g,h)=>h/2-g/18*(h/2-14),eqG=(y,h)=>(h/2-y)/(h/2-14)*18;
+function eqTrack(){return S.tracks.find(t=>t.id===eqTid)||S.tracks.find(t=>t.id===S.selTrack)||S.tracks[0]}
+function renderEQ(){const sel=$('#eqTrack'),t=eqTrack();sel.innerHTML=S.tracks.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');if(t){sel.value=t.id;eqTid=t.id}drawEQ()}
+$('#eqTrack').onchange=e=>{eqTid=e.target.value;drawEQ()};
+$('#eqReset').onclick=()=>{const t=eqTrack();if(!t)return;pushUndo();t.peq=null;t.eq=[0,0,0];peqOf(t);syncEqSliders(t);applyParams();drawEQ()};
+function syncEqSliders(t){const b=peqOf(t);t.eq=[b[1].g,b[3].g,b[4].g];[0,1,2].forEach(i=>$$(`[data-tid="${t.id}"][data-k="eq${i}"]`).forEach(o=>o.value=t.eq[i]))}
+function drawEQ(){const cv=$('#eqc'),t=eqTrack();if(!cv||!cv.clientWidth)return;const w=cv.clientWidth,h=cv.clientHeight,dpr=Math.min(2,devicePixelRatio||1);if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+  const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);g.font='10px IBM Plex Mono, monospace';
+  for(const f of[50,100,200,500,1000,2000,5000,10000]){const x=eqX(f,w);g.fillStyle='rgba(255,255,255,.06)';g.fillRect(x,0,1,h);g.fillStyle='#5d6475';g.fillText(f>=1000?f/1000+'k':f,x+3,h-4)}
+  for(const db of[-12,-6,0,6,12]){const y=eqY(db,h);g.fillStyle=db?'rgba(255,255,255,.05)':'rgba(255,255,255,.14)';g.fillRect(0,y,w,1);g.fillStyle='#5d6475';g.fillText((db>0?'+':'')+db,4,y-3)}
+  if(!t){$('#eqInfo').innerHTML='<span></span><span>还没有音轨</span>';return}
+  const n=mix&&mix.nodes[t.id];if(playing&&n){const an=n.an,arr=new Float32Array(an.frequencyBinCount);an.getFloatFrequencyData(arr);const sr=mix.ac.sampleRate;g.beginPath();g.moveTo(0,h);
+    for(let px=0;px<=w;px+=3){const f=eqF(px,w),i=Math.min(arr.length-1,Math.round(f/(sr/2)*arr.length));g.lineTo(px,h-(clamp(arr[i],-100,0)+100)/100*h*0.9)}g.lineTo(w,h);g.closePath();g.fillStyle='rgba(90,169,230,.16)';g.fill()}
+  if(!eqCtx){eqCtx=new OfflineAudioContext(1,1,44100);eqFilters=[0,1,2,3,4].map(()=>eqCtx.createBiquadFilter())}
+  const bands=peqOf(t),tot=new Float32Array(EQN);bands.forEach((b,i)=>{const f=eqFilters[i];f.type=b.type;f.frequency.value=b.f;f.gain.value=b.g||0;f.Q.value=b.q||0.71;f.getFrequencyResponse(eqFreq,eqMag,eqPh);for(let k=0;k<EQN;k++)tot[k]+=20*Math.log10(eqMag[k]+1e-9)});
+  g.beginPath();for(let k=0;k<EQN;k++){const x=eqX(eqFreq[k],w),y=eqY(clamp(tot[k],-24,24),h);k?g.lineTo(x,y):g.moveTo(x,y)}g.strokeStyle=t.color;g.lineWidth=2.5;g.stroke();g.lineTo(w,eqY(0,h));g.lineTo(0,eqY(0,h));g.closePath();g.fillStyle=hexA(t.color,.12);g.fill();
+  bands.forEach((b,i)=>{const x=eqX(b.f,w),y=eqY(b.type==='highpass'?0:b.g,h);g.beginPath();g.arc(x,y,8,0,7);g.fillStyle=EQC[i];g.fill();g.fillStyle='#0b0c10';g.font='bold 10px IBM Plex Mono, monospace';g.fillText(i+1,x-3,y+3.5)});
+  $('#eqInfo').innerHTML=bands.map((b,i)=>`<i style="background:${EQC[i]}"></i><span>${({highpass:'低切',lowshelf:'低架',peaking:'峰值',highshelf:'高架'})[b.type]} ${b.f>=1000?(b.f/1000).toFixed(2)+'k':Math.round(b.f)}Hz${b.type==='highpass'?'':` ${b.g>=0?'+':''}${(+b.g).toFixed(1)}dB`}${b.type==='peaking'?` Q${(+b.q).toFixed(2)}`:''}</span>`).join('')}
+function eqHit(e){const cv=$('#eqc'),r=cv.getBoundingClientRect(),t=eqTrack();if(!t)return{};const x=e.clientX-r.left,y=e.clientY-r.top;let best=-1,bd=18;peqOf(t).forEach((b,i)=>{const d=Math.hypot(eqX(b.f,r.width)-x,eqY(b.type==='highpass'?0:b.g,r.height)-y);if(d<bd){bd=d;best=i}});return{t,i:best,r}}
+$('#eqc').addEventListener('pointerdown',e=>{const{t,i,r}=eqHit(e);if(!t||i<0)return;e.preventDefault();const b=peqOf(t)[i],before=snap();let moved=false;$('#eqc').setPointerCapture(e.pointerId);
+  const mv=ev=>{moved=true;b.f=Math.round(clamp(eqF(ev.clientX-r.left,r.width),20,20000));if(b.type!=='highpass')b.g=+clamp(eqG(ev.clientY-r.top,r.height),-18,18).toFixed(1);syncEqSliders(t);applyParams();drawEQ()};
+  const up=()=>{$('#eqc').removeEventListener('pointermove',mv);$('#eqc').removeEventListener('pointerup',up);if(moved){undoS.push(before);redoS.length=0}};
+  $('#eqc').addEventListener('pointermove',mv);$('#eqc').addEventListener('pointerup',up)});
+$('#eqc').addEventListener('wheel',e=>{const{t,i}=eqHit(e);if(!t||i<0)return;e.preventDefault();const b=peqOf(t)[i];b.q=+clamp((b.q||0.71)*(e.deltaY<0?1.15:1/1.15),0.2,12).toFixed(2);applyParams();drawEQ()},{passive:false});
+$('#eqc').addEventListener('dblclick',e=>{const{t,i}=eqHit(e);if(!t||i<0)return;pushUndo();const b=peqOf(t)[i];if(b.type==='highpass')b.f=20;else b.g=0;syncEqSliders(t);applyParams();drawEQ()});
+addEventListener('resize',()=>{if(!$('#pEq').hidden)drawEQ()});
+
 /* ---------- transport wiring ---------- */
 $('#bPlay').onclick=toggle;$('#bStop').onclick=stop;$('#bHome').onclick=()=>seek(0);
 $('#bLoop').onclick=()=>{const c=S.clips.find(c=>c.id===S.sel);if(!S.loop){if(c){S.loopA=c.start;S.loopB=c.start+c.dur}else{const b4=beat()*4;S.loopA=Math.floor(curPos()/b4)*b4;S.loopB=S.loopA+b4*4}S.loop=true;toast(`循环 ${fmtShort(S.loopA)} – ${fmtShort(S.loopB)}`)}else S.loop=false;$('#bLoop').classList.toggle('on',S.loop);drawRuler();rebuildIfPlaying()};
@@ -849,11 +982,15 @@ $('#bMet').onclick=()=>{S.met=!S.met;$('#bMet').classList.toggle('on',S.met);reb
 $('#zoom').oninput=e=>setZoom(+e.target.value);
 $('#bAdd').onclick=()=>{pushUndo();const t=newTrack();S.selTrack=t.id;renderAll()};
 $('#bSplit').onclick=splitSel;$('#bDel').onclick=delSel;$('#bDup').onclick=dupSel;$('#bUndo').onclick=undo;$('#bRedo').onclick=redo;
-const PANES={mix:'#pMix',clip:'#pClip',roll:'#pRoll',lyr:'#pLyr',ana:'#pAna',ai:'#pAi'};
-function showTab(name){$$('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===name));for(const[k,s]of Object.entries(PANES))$(s).hidden=k!==name;$('#dock').classList.remove('min');$('#bDock').textContent='▾';if(name==='roll')renderRoll(true);if(name==='clip')renderInspector();if(name==='ana')fillAnaSrc()}
+const PANES={mix:'#pMix',clip:'#pClip',eq:'#pEq',roll:'#pRoll',lyr:'#pLyr',ana:'#pAna',ai:'#pAi'};
+function showTab(name){$$('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===name));for(const[k,s]of Object.entries(PANES))$(s).hidden=k!==name;$('#dock').classList.remove('min');$('#bDock').textContent='▾';if(name==='roll')renderRoll(true);if(name==='clip')renderInspector();if(name==='eq')renderEQ();if(name==='ana')fillAnaSrc()}
 $$('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 $('#bDock').onclick=()=>{const d=$('#dock');d.classList.toggle('min');$('#bDock').textContent=d.classList.contains('min')?'▴':'▾';setTimeout(drawRuler,0)};
 addEventListener('keydown',e=>{const tg=e.target.tagName;if(tg==='TEXTAREA'||(tg==='INPUT'&&e.target.type!=='range'))return;const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
+  if(keysOn&&!mod&&keyPlay(e,true))return;
+  if(mod&&k==='a'){e.preventDefault();S.multi=new Set(S.clips.map(c=>c.id));S.sel=S.clips[0]?.id||null;$$('.clip').forEach(x=>x.classList.add('sel'));return}
+  if(k==='escape'){select(null);return}
+  if(k==='m'&&!mod){addMarker();return}
   if(tapMode&&(k==='enter'||k==='t')){e.preventDefault();tap();return}
   if(k===' '){e.preventDefault();toggle()}else if(mod&&k==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(mod&&k==='y'){e.preventDefault();redo()}else if(mod&&k==='d'){e.preventDefault();dupSel()}
   else if(k==='delete'||k==='backspace'){e.preventDefault();delSel()}else if(k==='s'&&!mod){splitSel()}else if(k==='home'){seek(0)}else if(k==='l'&&!mod){$('#bLoop').click()}else if(k==='r'&&!mod){toggleRec()}});
@@ -880,9 +1017,9 @@ async function buildDemo(){const bt=60/S.bpm,bars=8,len=bars*4*bt;
       g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.32,t+0.04);g.gain.setValueAtTime(.28,t+d-0.06);g.gain.linearRampToValueAtTime(0,t+d);o.connect(g);o2.connect(g2).connect(g);g.connect(out);o.start(t);o2.start(t);o.stop(t+d+0.02);o2.stop(t+d+0.02)}});
   const defs=[['鼓组',drums,{vol:.85,comp:.3,rev:.06}],['贝斯',bass,{vol:.7,eq:[3,0,-2],rev:0}],['和弦铺底',pad,{vol:.55,pan:-.2,rev:.35}],['主旋律（人声示意）',lead,{vol:.6,pan:.15,rev:.3,dly:.25}]];
   for(const[name,buf,p]of defs){const t=newTrack(name);Object.assign(t,p);newClip(t.id,addBuffer(buf,name),0)}
-  const pt=newTrack('电钢琴（MIDI）','piano');Object.assign(pt,{vol:.42,rev:.28,pan:-.1});const notes=[];for(let bar=0;bar<bars;bar++)for(let e=0;e<8;e++){const ch=prog[bar%4];notes.push({p:ch[e%ch.length]+12,s:(bar*4+e/2)*bt,d:bt/2*0.9,v:e%2?0.55:0.78})}newMidiClip(pt.id,0,len,notes).name='琶音';
+  const pt=newTrack('钢琴（MIDI）','gpiano');Object.assign(pt,{vol:.42,rev:.28,pan:-.1});const notes=[];for(let bar=0;bar<bars;bar++)for(let e=0;e<8;e++){const ch=prog[bar%4];notes.push({p:ch[e%ch.length]+12,s:(bar*4+e/2)*bt,d:bt/2*0.9,v:e%2?0.55:0.78})}newMidiClip(pt.id,0,len,notes).name='琶音';
   const bar=4*bt;S.lyrics=[[0,'夜色慢慢落在城市边缘'],[2*bar,'我把心跳调成你的频率'],[4*bar,'每一个音符都在发光'],[6*bar,'带我回到最初的旋律']].map(([t,text])=>({id:uid(),t:+t.toFixed(2),text}));
   $('#lyrText').value=S.lyrics.map(l=>l.text).join('\n')}
 
-(async()=>{renderAll();aiInit();requestAnimationFrame(tick);try{await buildDemo()}catch(e){console.error(e)}S.selTrack=S.tracks[0]?.id;renderAll();toast('已载入示例歌曲：按空格播放，拖动片段试试',3500)})();
+(async()=>{renderAll();aiInit();requestAnimationFrame(tick);try{await buildDemo()}catch(e){console.error(e)}preloadUsed();S.selTrack=S.tracks[0]?.id;renderAll();toast('已载入示例歌曲：按空格播放，拖动片段试试',3500)})();
 </script>
