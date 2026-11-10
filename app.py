@@ -78,6 +78,7 @@ def separate(audio: FileData, mode: str = "vocals") -> tuple[dict, FileData | No
     """
     if mode not in ("vocals", "4stems"):
         raise ValueError("mode 只能是 vocals 或 4stems")
+    print(f"[separate] mode={mode} file={_path(audio).stat().st_size // 1024} KB", flush=True)
     out = _job_dir()
     res = _gpu_separate(str(_path(audio)), str(out), mode)
     stems = res["stems"][:MAX_STEMS]
@@ -119,4 +120,5 @@ def gradio_client_js():
 
 
 if __name__ == "__main__":
-    app.launch(server_name=os.environ.get("HOST", "0.0.0.0"), server_port=int(os.environ.get("PORT", "7860")), show_error=True)
+    app.launch(server_name=os.environ.get("HOST", "0.0.0.0"), server_port=int(os.environ.get("PORT", "7860")), show_error=True,
+               ssr_mode=False)  # Spaces turn SSR on; its Node proxy breaks the API calls from the studio page
