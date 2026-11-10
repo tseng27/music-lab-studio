@@ -1,0 +1,8 @@
+# AI models (install on a GPU machine; each one is optional)
+-r requirements.txt
+torch>=2.2
+torchaudio>=2.2
+demucs>=4.0.1          # 分轨分离
+stable-ts>=2.17        # Whisper 歌词对齐
+basic-pitch>=0.3       # 音频转 MIDI
+transformers>=4.40     # MusicGen（没有接 ACE-Step 时的生成后备）
