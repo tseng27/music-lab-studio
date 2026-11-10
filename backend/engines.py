@@ -80,7 +80,7 @@ def features() -> dict:
 STEM_LABELS = {"vocals": "人声", "no_vocals": "伴奏", "drums": "鼓", "bass": "贝斯", "other": "其他乐器", "guitar": "吉他", "piano": "钢琴"}
 
 
-_demucs = None
+_demucs: dict = {}  # model name -> loaded Demucs model
 
 
 def _load_audio(path: Path, sr: int):
@@ -99,18 +99,21 @@ def _load_audio(path: Path, sr: int):
 
 
 def separate(src: Path, out_dir: Path, mode: str = "vocals", progress: Progress = print) -> dict:
-    """Split a mix into stems. mode = "vocals" (人声 + 伴奏) or "4stems" (人声/鼓/贝斯/其他)."""
+    """Split a mix into stems.
+
+    mode = "vocals" (人声 + 伴奏), "4stems" (人声/鼓/贝斯/其他) or "6stems" (adds 吉他/钢琴, model htdemucs_6s).
+    """
     if MOCK:
         return _mock_separate(src, out_dir, mode)
-    global _demucs
     import torch
     from demucs.apply import apply_model  # type: ignore
     from demucs.pretrained import get_model  # type: ignore
 
-    if _demucs is None:
-        progress(f"载入 Demucs {DEMUCS_MODEL}…")
-        _demucs = get_model(DEMUCS_MODEL).eval()
-    model = _demucs
+    name = "htdemucs_6s" if mode == "6stems" else DEMUCS_MODEL
+    if name not in _demucs:
+        progress(f"载入 Demucs {name}…")
+        _demucs[name] = get_model(name).eval()
+    model = _demucs[name]
     wav = _load_audio(src, model.samplerate)
     ref = wav.mean(0)
     mean, std = ref.mean(), ref.std() + 1e-8
@@ -121,7 +124,7 @@ def separate(src: Path, out_dir: Path, mode: str = "vocals", progress: Progress 
     parts = dict(zip(model.sources, out))
     if mode == "vocals":
         parts = {"vocals": parts["vocals"], "no_vocals": sum(v for k, v in parts.items() if k != "vocals")}
-    order = ["vocals", "no_vocals", "drums", "bass", "other", "guitar", "piano"]
+    order = ["vocals", "no_vocals", "drums", "bass", "guitar", "piano", "other"]
     stems = []
     for name in sorted(parts, key=lambda n: order.index(n) if n in order else 99):
         dest = out_dir / f"{name}.wav"
@@ -297,7 +300,8 @@ def _tone(dur, sr, freq, amp=0.2):
 
 def _mock_separate(src, out_dir, mode):
     info = sf.info(str(src))
-    names = ["vocals", "no_vocals"] if mode == "vocals" else ["vocals", "drums", "bass", "other"]
+    names = {"vocals": ["vocals", "no_vocals"], "4stems": ["vocals", "drums", "bass", "other"],
+             "6stems": ["vocals", "drums", "bass", "guitar", "piano", "other"]}[mode]
     stems = []
     for i, n in enumerate(names):
         dest = out_dir / f"{n}.wav"

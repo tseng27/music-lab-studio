@@ -53,13 +53,19 @@ def test_health(server):
 def test_separate_four_stems(server, wav):
     info, *files = server[1].predict(wav, "4stems", api_name="/separate")
     assert [s["name"] for s in info["stems"]] == ["vocals", "drums", "bass", "other"]
-    assert all(f and sf.info(f).duration > 5 for f in files)
+    assert all(f and sf.info(f).duration > 5 for f in files[:4]) and files[4:] == [None, None]
+
+
+def test_separate_six_stems(server, wav):
+    info, *files = server[1].predict(wav, "6stems", api_name="/separate")
+    assert [s["label"] for s in info["stems"]] == ["人声", "鼓", "贝斯", "吉他", "钢琴", "其他乐器"]
+    assert len(files) == 6 and all(files)
 
 
 def test_separate_two_stems_leaves_empty_slots(server, wav):
     info, *files = server[1].predict(wav, "vocals", api_name="/separate")
     assert [s["label"] for s in info["stems"]] == ["人声", "伴奏"]
-    assert files[2] is None and files[3] is None
+    assert files[2:] == [None] * 4
 
 
 def test_align(server, wav):

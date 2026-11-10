@@ -24,7 +24,7 @@ from backend import engines  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / "frontend"
-MAX_STEMS = 4
+MAX_STEMS = 6
 
 try:  # present on Hugging Face Spaces
     import spaces
@@ -71,13 +71,16 @@ def health() -> dict:
 
 
 @app.api(name="separate", concurrency_limit=1)
-def separate(audio: FileData, mode: str = "vocals") -> tuple[dict, FileData | None, FileData | None, FileData | None, FileData | None]:
-    """Split audio into stems (mode "vocals" → 人声+伴奏, "4stems" → 人声/鼓/贝斯/其他).
+def separate(
+    audio: FileData, mode: str = "vocals"
+) -> tuple[dict, FileData | None, FileData | None, FileData | None, FileData | None, FileData | None, FileData | None]:
+    """Split audio into stems (mode "vocals" → 人声+伴奏, "4stems" → 人声/鼓/贝斯/其他, "6stems" → 再加吉他/钢琴).
 
-    Returns stem info followed by up to four WAV files in the same order.
+    Returns stem info followed by up to six WAV files in the same order.
     """
-    if mode not in ("vocals", "4stems"):
-        raise ValueError("mode 只能是 vocals 或 4stems")
+    if mode not in ("vocals", "4stems", "6stems"):
+        raise ValueError("mode 只能是 vocals、4stems 或 6stems")
+    print(f"[separate] mode={mode} file={_path(audio).stat().st_size // 1024} KB", flush=True)
     out = _job_dir()
     res = _gpu_separate(str(_path(audio)), str(out), mode)
     stems = res["stems"][:MAX_STEMS]
@@ -119,4 +122,5 @@ def gradio_client_js():
 
 
 if __name__ == "__main__":
-    app.launch(server_name=os.environ.get("HOST", "0.0.0.0"), server_port=int(os.environ.get("PORT", "7860")), show_error=True)
+    app.launch(server_name=os.environ.get("HOST", "0.0.0.0"), server_port=int(os.environ.get("PORT", "7860")), show_error=True,
+               ssr_mode=False)  # Spaces turn SSR on; its Node proxy breaks the API calls from the studio page
