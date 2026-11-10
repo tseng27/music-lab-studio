@@ -249,7 +249,7 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
       </div>
     </div>
     <div class="pane" id="pAi" hidden>
-      <div class="aibar"><span class="lbl">AI 服务器</span><input id="aiUrl" class="num" style="width:260px;max-width:100%" placeholder="https://你的-space.hf.space"><button id="aiConn">连接</button><span id="aiStat" class="hint">未连接</span></div>
+      <div class="aibar"><span class="lbl">AI 服务器</span><input id="aiUrl" class="num" style="width:260px;max-width:100%" placeholder="https://使用者名稱-space名稱.hf.space"><button id="aiConn">连接</button><span id="aiStat" class="hint">未连接</span></div>
       <div class="ainote hint" id="aiNote" hidden>这个网页版受安全限制，不能连接外部服务器。要用 AI 工具，请打开你部署好的后端网址，后端会直接提供这个工作室页面。</div>
       <div class="aigrid">
         <div class="card"><h5>分轨分离 <span class="chip" data-f="separate"></span></h5><div class="hint">把选中的音频片段拆成人声、伴奏，或拆成鼓、贝斯、其他乐器，放到新轨道上并对齐原位置。</div>
@@ -655,37 +655,45 @@ $('#bRec').onclick=toggleRec;
 $('#bLim').onclick=()=>{S.limit=!S.limit;$('#bLim').classList.toggle('on',S.limit);applyParams()};
 
 /* ---------- AI tools (talks to the backend in /backend) ---------- */
-let AI={base:'',feat:null};
+let AI={base:'',feat:null,client:null,gc:null};
 function aiLog(m,cls){const d=document.createElement('div');d.textContent=new Date().toTimeString().slice(0,8)+'  '+m;if(cls)d.className=cls;const L=$('#aiLog');L.prepend(d);while(L.children.length>8)L.removeChild(L.lastChild)}
 function aiInit(){let saved='';try{saved=localStorage.getItem('musiclab.ai')||''}catch(e){}
-  const same=/^https?:$/.test(location.protocol)&&!inArtifact?location.origin:'';$('#aiUrl').value=saved||same;$('#aiNote').hidden=!inArtifact;if($('#aiUrl').value&&!inArtifact)aiConnect(true)}
+  const same=/^https?:$/.test(location.protocol)&&!inArtifact?location.origin:'';$('#aiUrl').value=same||saved;$('#aiNote').hidden=!inArtifact;if($('#aiUrl').value&&!inArtifact)aiConnect(true)}
 async function aiConnect(quiet){const base=$('#aiUrl').value.trim().replace(/\/+$/,'');if(!base){if(!quiet)toast('请填写 AI 服务器网址');return}
-  $('#aiStat').textContent='连接中…';try{const r=await fetch(base+'/api/health');if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();AI={base,feat:j.features};try{localStorage.setItem('musiclab.ai',base)}catch(e){}
-    $('#aiStat').textContent=j.features.mock?'已连接（演示模式：返回的是合成的示例结果）':'已连接';
-    $$('#pAi .chip').forEach(c=>{const v=j.features[c.dataset.f];c.className='chip '+(v?'ok':'no');c.textContent=v?(typeof v==='string'?v:'可用'):'未安装'});if(!quiet)aiLog('已连接 '+base,'d')}
-  catch(e){AI.feat=null;$('#aiStat').textContent='连接失败';if(!quiet)aiLog('连接失败：'+(inArtifact?'网页版不能连接外部服务器':e.message),'e')}}
+  $('#aiStat').textContent='连接中…';
+  try{const gc=await import(base+'/vendor/gradio-client.js');const client=await gc.Client.connect(base+'/');const r=await client.predict('/health',{});const feat=r.data[0].features;
+    AI={base,feat,client,gc};try{localStorage.setItem('musiclab.ai',base)}catch(e){}
+    $('#aiStat').textContent=feat.mock?'已连接（演示模式：返回的是合成的示例结果）':'已连接';
+    $$('#pAi .chip').forEach(c=>{const v=feat[c.dataset.f];c.className='chip '+(v?'ok':'no');c.textContent=v?(typeof v==='string'?v:'可用'):'未安装'});if(!quiet)aiLog('已连接 '+base,'d')}
+  catch(e){AI.feat=null;$('#aiStat').textContent='连接失败';if(!quiet)aiLog('连接失败：'+(inArtifact?'网页版不能连接外部服务器':(e.message||e)),'e')}}
 function aiNeed(f){if(!AI.feat){toast('请先连接 AI 服务器');return false}if(!AI.feat[f]){toast('服务器还没装这个功能的模型');return false}return true}
 function selAudioClip(){const c=S.clips.find(c=>c.id===S.sel);if(!c||c.kind==='midi'){toast('请先在时间线上点选一个音频片段');return null}return c}
 function clipWavBlob(c){const b=BUF.get(c.bid).buf,sr=b.sampleRate,s0=Math.floor(c.off*sr),n=Math.max(1,Math.min(b.length-s0,Math.floor(c.dur*sr)));const out=new AudioBuffer({length:n,numberOfChannels:b.numberOfChannels,sampleRate:sr});
   for(let ch=0;ch<b.numberOfChannels;ch++)out.copyToChannel(b.getChannelData(ch).subarray(s0,s0+n),ch);return new Blob([encodeWAV(out)],{type:'audio/wav'})}
-async function aiCall(path,init,label){const r=await fetch(AI.base+path,{method:'POST',...init});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||('HTTP '+r.status));aiLog(label+'：已提交');
-  for(;;){await new Promise(z=>setTimeout(z,1500));const q=await (await fetch(AI.base+'/api/jobs/'+j.id)).json();if(q.status==='done')return q.result;if(q.status==='error')throw new Error(q.error||'处理失败');$('#aiStat').textContent=label+'：'+q.message}}
-async function aiFetchAudio(url){const r=await fetch(AI.base+url);if(!r.ok)throw new Error('下载结果失败 '+r.status);return await decode(new Blob([await r.arrayBuffer()]))}
-async function aiRun(btn,fn){btn.disabled=true;const t=btn.textContent;btn.textContent='处理中…';try{await fn()}catch(e){aiLog(e.message,'e');toast('AI 处理失败：'+e.message,4500)}finally{btn.disabled=false;btn.textContent=t;$('#aiStat').textContent=AI.feat?'已连接':'未连接'}}
+/* one queued call; shows the queue position while waiting (ZeroGPU may queue) */
+async function aiCall(name,params,label){aiLog(label+'：已提交，第一次使用要先下载模型，可能要等几分钟');const job=AI.client.submit('/'+name,params);
+  for await(const ev of job){if(ev.type==='status'){if(ev.stage==='error')throw new Error(ev.message||'处理失败');
+      $('#aiStat').textContent=label+'：'+(ev.queue&&ev.position>0?`排队中，前面还有 ${ev.position} 个`:'处理中…')}
+    else if(ev.type==='data')return ev.data}
+  throw new Error('连接中断')}
+const aiFile=b=>AI.gc.handle_file(b);
+async function aiFetchAudio(f){const r=await fetch(f.url);if(!r.ok)throw new Error('下载结果失败 '+r.status);return await decode(new Blob([await r.arrayBuffer()]))}
+async function aiRun(btn,fn){btn.disabled=true;const t=btn.textContent;btn.textContent='处理中…';try{await fn()}catch(e){const m=e&&(e.message||e.title)||String(e);aiLog(m,'e');toast('AI 处理失败：'+m,4500)}finally{btn.disabled=false;btn.textContent=t;$('#aiStat').textContent=AI.feat?'已连接':'未连接'}}
 $('#aiConn').onclick=()=>aiConnect(false);
-$('#aiSep').onclick=e=>{if(!aiNeed('separate'))return;const c=selAudioClip();if(!c)return;aiRun(e.target,async()=>{const fd=new FormData();fd.append('file',clipWavBlob(c),'clip.wav');fd.append('mode',$('#aiSepMode').value);
-  const res=await aiCall('/api/separate',{body:fd},'分轨分离');const bufs=[];for(const st of res.stems)bufs.push([st,await aiFetchAudio(st.url)]);pushUndo();
+$('#aiSep').onclick=e=>{if(!aiNeed('separate'))return;const c=selAudioClip();if(!c)return;aiRun(e.target,async()=>{
+  const [info,...files]=await aiCall('separate',{audio:aiFile(clipWavBlob(c)),mode:$('#aiSepMode').value},'分轨分离');const bufs=[];
+  for(let i=0;i<info.stems.length;i++)if(files[i])bufs.push([info.stems[i],await aiFetchAudio(files[i])]);pushUndo();
   for(const[st,buf]of bufs){const t=newTrack(`${c.name} · ${st.label}`.slice(0,24));newClip(t.id,addBuffer(buf,st.label),c.start)}
   const src=S.tracks.find(t=>t.id===c.tid);if(src)src.mute=true;renderAll();rebuildIfPlaying();aiLog(`分离完成：${bufs.length} 条分轨，原轨已静音`,'d')})};
 $('#aiAlign').onclick=e=>{if(!aiNeed('align'))return;const c=selAudioClip();if(!c)return;let lines=S.lyrics.map(l=>l.text);if(!lines.length)lines=parseLyrics($('#lyrText').value).map(l=>l.text);if(!lines.length)return toast('请先在「歌词对齐」里填好歌词');
-  aiRun(e.target,async()=>{const fd=new FormData();fd.append('file',clipWavBlob(c),'clip.wav');fd.append('lyrics',JSON.stringify(lines));fd.append('language',$('#aiLang').value);fd.append('vocals_first',$('#aiVoc').checked?'true':'false');
-    const res=await aiCall('/api/align',{body:fd},'歌词对齐');pushUndo();S.lyrics=res.lines.map(l=>({id:uid(),t:l.start==null?null:+(c.start+l.start).toFixed(2),text:l.text}));sortLyr();lastK=-2;renderLyrics();
+  aiRun(e.target,async()=>{const [res]=await aiCall('align',{audio:aiFile(clipWavBlob(c)),lyrics:JSON.stringify(lines),language:$('#aiLang').value,vocals_first:$('#aiVoc').checked},'歌词对齐');
+    pushUndo();S.lyrics=res.lines.map(l=>({id:uid(),t:l.start==null?null:+(c.start+l.start).toFixed(2),text:l.text}));sortLyr();lastK=-2;renderLyrics();
     aiLog(`对齐完成：${res.lines.filter(l=>l.start!=null).length}/${res.lines.length} 句有时间`,'d')})};
-$('#aiMidi').onclick=e=>{if(!aiNeed('transcribe'))return;const c=selAudioClip();if(!c)return;aiRun(e.target,async()=>{const fd=new FormData();fd.append('file',clipWavBlob(c),'clip.wav');
-  const res=await aiCall('/api/transcribe',{body:fd},'音频转 MIDI');pushUndo();const t=newTrack((c.name+' · MIDI').slice(0,24),'piano');const mc=newMidiClip(t.id,c.start,c.dur,res.notes.filter(n=>n.p>=RLO&&n.p<=RHI));mc.name='识别结果';renderAll();rebuildIfPlaying();aiLog(`识别出 ${mc.notes.length} 个音符`,'d')})};
+$('#aiMidi').onclick=e=>{if(!aiNeed('transcribe'))return;const c=selAudioClip();if(!c)return;aiRun(e.target,async()=>{const [res]=await aiCall('transcribe',{audio:aiFile(clipWavBlob(c))},'音频转 MIDI');
+  pushUndo();const t=newTrack((c.name+' · MIDI').slice(0,24),'piano');const mc=newMidiClip(t.id,c.start,c.dur,res.notes.filter(n=>n.p>=RLO&&n.p<=RHI));mc.name='识别结果';renderAll();rebuildIfPlaying();aiLog(`识别出 ${mc.notes.length} 个音符`,'d')})};
 $('#aiGen').onclick=e=>{if(!aiNeed('generate'))return;const prompt=$('#aiPrompt').value.trim();const lyr=$('#aiUseLyr').checked?(S.lyrics.length?S.lyrics.map(l=>l.text).join('\n'):$('#lyrText').value.trim()):'';if(!prompt&&!lyr)return toast('请写一段风格描述');
-  const at=snapT(curPos());aiRun(e.target,async()=>{const res=await aiCall('/api/generate',{headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,lyrics:lyr,duration:+$('#aiDur').value||30,bpm:S.bpm,language:$('#aiLang').value})},'AI 作曲');
-    const buf=await aiFetchAudio(res.url);pushUndo();const t=newTrack('AI 生成');newClip(t.id,addBuffer(buf,'AI · '+(prompt||'歌曲').slice(0,12)),at);renderAll();rebuildIfPlaying();aiLog(`生成完成（${res.engine}），${buf.duration.toFixed(1)} 秒`,'d')})};
+  const at=snapT(curPos());aiRun(e.target,async()=>{const [info,file]=await aiCall('generate',{prompt,lyrics:lyr,duration:+$('#aiDur').value||30,bpm:Math.round(S.bpm),language:$('#aiLang').value},'AI 作曲');
+    const buf=await aiFetchAudio(file);pushUndo();const t=newTrack('AI 生成');newClip(t.id,addBuffer(buf,'AI · '+(prompt||'歌曲').slice(0,12)),at);renderAll();rebuildIfPlaying();aiLog(`生成完成（${info.engine}），${buf.duration.toFixed(1)} 秒`,'d')})};
 
 /* ---------- transport wiring ---------- */
 $('#bPlay').onclick=toggle;$('#bStop').onclick=stop;$('#bHome').onclick=()=>seek(0);

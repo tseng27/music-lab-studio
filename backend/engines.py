@@ -3,6 +3,8 @@
 Every engine takes an input file path plus options, writes any audio it makes into
 ``out_dir`` and returns a JSON-serialisable result. Heavy libraries are imported
 lazily so the server starts (and the frontend works) even when some are missing.
+Models stay on the CPU between calls and borrow the GPU only while they run,
+which is what Hugging Face ZeroGPU expects.
 
 Set ``MUSICLAB_MOCK=1`` to replace every engine with a fast synthetic stand-in;
 that is how the test suite and a GPU-less demo run.
@@ -13,8 +15,6 @@ import importlib.util
 import json
 import os
 import re
-import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -36,6 +36,33 @@ def has(mod: str) -> bool:
     return importlib.util.find_spec(mod) is not None
 
 
+def device() -> str:
+    """"cuda" inside a ZeroGPU call or on a GPU machine, else "cpu"."""
+    import torch
+
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+class on_device:
+    """Move a cached CPU model to the GPU for one call, then back.
+
+    ZeroGPU only lends a GPU for the duration of a @spaces.GPU call, so models
+    live on the CPU between calls.
+    """
+
+    def __init__(self, model):
+        self.model = model
+
+    def __enter__(self):
+        self.dev = device()
+        self.model.to(self.dev)
+        return self.dev
+
+    def __exit__(self, *exc):
+        if self.dev != "cpu":
+            self.model.to("cpu")
+
+
 def features() -> dict:
     if MOCK:
         return {"separate": True, "align": True, "transcribe": True, "generate": "mock", "mock": True}
@@ -53,25 +80,53 @@ def features() -> dict:
 STEM_LABELS = {"vocals": "人声", "no_vocals": "伴奏", "drums": "鼓", "bass": "贝斯", "other": "其他乐器", "guitar": "吉他", "piano": "钢琴"}
 
 
+_demucs = None
+
+
+def _load_audio(path: Path, sr: int):
+    """Read any soundfile-supported file as a (2, samples) float tensor at ``sr``."""
+    import torch
+    import torchaudio.functional as AF
+
+    data, file_sr = sf.read(str(path), dtype="float32", always_2d=True)
+    wav = torch.from_numpy(data.T.copy())
+    if wav.shape[0] == 1:
+        wav = wav.repeat(2, 1)
+    wav = wav[:2]
+    if file_sr != sr:
+        wav = AF.resample(wav, file_sr, sr)
+    return wav
+
+
 def separate(src: Path, out_dir: Path, mode: str = "vocals", progress: Progress = print) -> dict:
     """Split a mix into stems. mode = "vocals" (人声 + 伴奏) or "4stems" (人声/鼓/贝斯/其他)."""
     if MOCK:
         return _mock_separate(src, out_dir, mode)
-    progress(f"Demucs ({DEMUCS_MODEL}) 正在分离…")
-    cmd = [sys.executable, "-m", "demucs", "-n", DEMUCS_MODEL, "-o", str(out_dir / "_demucs"), "--filename", "{stem}.{ext}"]
+    global _demucs
+    import torch
+    from demucs.apply import apply_model  # type: ignore
+    from demucs.pretrained import get_model  # type: ignore
+
+    if _demucs is None:
+        progress(f"载入 Demucs {DEMUCS_MODEL}…")
+        _demucs = get_model(DEMUCS_MODEL).eval()
+    model = _demucs
+    wav = _load_audio(src, model.samplerate)
+    ref = wav.mean(0)
+    mean, std = ref.mean(), ref.std() + 1e-8
+    progress("Demucs 正在分离…")
+    with on_device(model) as dev, torch.no_grad():
+        out = apply_model(model, ((wav - mean) / std)[None].to(dev), device=dev, shifts=1, split=True, overlap=0.25)[0]
+    out = (out * std + mean).cpu()
+    parts = dict(zip(model.sources, out))
     if mode == "vocals":
-        cmd += ["--two-stems", "vocals"]
-    cmd.append(str(src))
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError("Demucs 失败：" + proc.stderr[-800:])
+        parts = {"vocals": parts["vocals"], "no_vocals": sum(v for k, v in parts.items() if k != "vocals")}
+    order = ["vocals", "no_vocals", "drums", "bass", "other", "guitar", "piano"]
     stems = []
-    for wav in sorted((out_dir / "_demucs").rglob("*.wav")):
-        dest = out_dir / wav.name
-        wav.replace(dest)
-        stems.append({"name": wav.stem, "label": STEM_LABELS.get(wav.stem, wav.stem), "file": dest.name})
-    if not stems:
-        raise RuntimeError("Demucs 没有产出任何分轨")
+    for name in sorted(parts, key=lambda n: order.index(n) if n in order else 99):
+        dest = out_dir / f"{name}.wav"
+        sf.write(dest, parts[name].numpy().T, model.samplerate)
+        stems.append({"name": name, "label": STEM_LABELS.get(name, name), "file": dest.name})
     return {"stems": stems}
 
 
@@ -135,9 +190,10 @@ def align(src: Path, lyrics: list[str], language: str = "zh", vocals_first: bool
 
     if _whisper is None:
         progress(f"载入 Whisper {WHISPER_MODEL} 模型…")
-        _whisper = stable_whisper.load_model(WHISPER_MODEL)
+        _whisper = stable_whisper.load_model(WHISPER_MODEL, device="cpu")
     progress("Whisper 正在对齐歌词…")
-    result = _whisper.align(str(audio), "\n".join(lyrics), language=language)
+    with on_device(_whisper):
+        result = _whisper.align(str(audio), "\n".join(lyrics), language=language)
     words = [(w.start, w.end, w.word) for w in result.all_words()]
     return {"lines": lines_from_words(lyrics, words)}
 
@@ -210,23 +266,26 @@ def _acestep(opts, prompt, lyrics, duration, out_dir, progress):
     raise RuntimeError("ACE-Step 超时")
 
 
-_musicgen_pipe = None
+_musicgen = None
 
 
 def _musicgen(prompt, duration, out_dir, progress):
-    global _musicgen_pipe
-    from transformers import pipeline  # type: ignore
+    global _musicgen
+    import torch
+    from transformers import AutoProcessor, MusicgenForConditionalGeneration  # type: ignore
 
-    if _musicgen_pipe is None:
+    if _musicgen is None:
         progress(f"载入 {MUSICGEN_MODEL}…")
-        _musicgen_pipe = pipeline("text-to-audio", model=MUSICGEN_MODEL)
+        _musicgen = (AutoProcessor.from_pretrained(MUSICGEN_MODEL),
+                     MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL).eval())
+    proc, model = _musicgen
     progress("MusicGen 生成中…")
-    out = _musicgen_pipe(prompt, forward_params={"do_sample": True, "max_new_tokens": int(min(duration, 30) * 50)})
-    audio = np.asarray(out["audio"]).squeeze()
-    if audio.ndim == 2:
-        audio = audio.T
+    with on_device(model) as dev, torch.no_grad():
+        inputs = proc(text=[prompt], padding=True, return_tensors="pt").to(dev)
+        audio = model.generate(**inputs, do_sample=True, max_new_tokens=int(min(duration, 30) * 50))
+    sr = model.config.audio_encoder.sampling_rate
     dest = out_dir / "generated.wav"
-    sf.write(dest, audio, int(out["sampling_rate"]))
+    sf.write(dest, audio[0].cpu().numpy().T, sr)
     return {"file": dest.name, "engine": "musicgen"}
 
 
