@@ -37,7 +37,7 @@ pinned: false
 
 ```python
 from gradio_client import Client, handle_file
-c = Client("你的使用者名称/music-lab-studio")
+c = Client("tseng27/music-lab-studio")
 info, vocals, accomp, *_ = c.predict(handle_file("song.wav"), "vocals", api_name="/separate")
 ```
 

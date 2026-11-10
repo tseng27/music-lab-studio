@@ -6,7 +6,7 @@ on:
     branches: [main]
   workflow_dispatch:
 env:
-  HF_SPACE: __HF_SPACE__   # <使用者名称>/<Space 名称>
+  HF_SPACE: tseng27/music-lab-studio
 jobs:
   sync:
     runs-on: ubuntu-latest
