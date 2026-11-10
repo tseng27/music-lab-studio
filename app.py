@@ -112,6 +112,8 @@ def transcribe(audio: FileData) -> dict:
 @app.api(name="generate", concurrency_limit=1)
 def generate(prompt: str, lyrics: str = "", duration: float = 30, bpm: int = 0, language: str = "zh") -> tuple[dict, FileData]:
     """Make music from a style prompt (and lyrics, when ACE-Step is connected)."""
+    print(f"[generate] duration={duration} prompt={len(prompt)} chars", flush=True)
+    engines.prefetch_generate_model()
     out = _job_dir()
     res = _gpu_generate({"prompt": prompt, "lyrics": lyrics, "duration": duration, "bpm": bpm or None, "language": language}, str(out))
     return {k: v for k, v in res.items() if k != "file"}, FileData(path=str(out / res["file"]))

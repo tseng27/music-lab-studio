@@ -269,19 +269,29 @@ def _acestep(opts, prompt, lyrics, duration, out_dir, progress):
     raise RuntimeError("ACE-Step 超时")
 
 
-_musicgen = None
+_musicgen_model = None  # (processor, model) once loaded
+
+
+def prefetch_generate_model(progress: Progress = print) -> None:
+    """Download the MusicGen weights ahead of time, outside the GPU allocation."""
+    if MOCK or ACESTEP_URL:
+        return
+    from huggingface_hub import snapshot_download
+
+    progress(f"下载 {MUSICGEN_MODEL}…")
+    snapshot_download(MUSICGEN_MODEL)
 
 
 def _musicgen(prompt, duration, out_dir, progress):
-    global _musicgen
+    global _musicgen_model
     import torch
     from transformers import AutoProcessor, MusicgenForConditionalGeneration  # type: ignore
 
-    if _musicgen is None:
+    if _musicgen_model is None:
         progress(f"载入 {MUSICGEN_MODEL}…")
-        _musicgen = (AutoProcessor.from_pretrained(MUSICGEN_MODEL),
-                     MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL).eval())
-    proc, model = _musicgen
+        _musicgen_model = (AutoProcessor.from_pretrained(MUSICGEN_MODEL),
+                           MusicgenForConditionalGeneration.from_pretrained(MUSICGEN_MODEL).eval())
+    proc, model = _musicgen_model
     progress("MusicGen 生成中…")
     with on_device(model) as dev, torch.no_grad():
         inputs = proc(text=[prompt], padding=True, return_tensors="pt").to(dev)
