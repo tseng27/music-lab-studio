@@ -19,8 +19,9 @@ os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
 from gradio import Server  # noqa: E402
 from gradio.data_classes import FileData  # noqa: E402
+from gradio.oauth import OAuthToken  # noqa: E402
 
-from backend import engines  # noqa: E402
+from backend import cloud, collab, engines  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 FRONTEND = ROOT / "frontend"
@@ -37,6 +38,12 @@ except ImportError:  # local machine: run the function as is
 
 
 app = Server(title="音乐实验室工作站")
+collab.attach(app)
+CLOUD = bool(os.environ.get("OAUTH_CLIENT_ID"))  # set by Spaces when the README has hf_oauth: true
+if CLOUD:
+    from gradio.oauth import attach_oauth
+
+    attach_oauth(app)  # adds /login/huggingface, /login/callback, /logout and the session cookie
 
 
 def _job_dir() -> Path:
@@ -67,7 +74,7 @@ def _gpu_generate(opts: dict, out_dir: str) -> dict:
 @app.api(name="health")
 def health() -> dict:
     """Which AI tools this server can run."""
-    return {"ok": True, "features": engines.features()}
+    return {"ok": True, "features": {**engines.features(), "cloud": CLOUD, "collab": True}}
 
 
 @app.api(name="separate", concurrency_limit=1)
@@ -108,6 +115,33 @@ def generate(prompt: str, lyrics: str = "", duration: float = 30, bpm: int = 0, 
     out = _job_dir()
     res = _gpu_generate({"prompt": prompt, "lyrics": lyrics, "duration": duration, "bpm": bpm or None, "language": language}, str(out))
     return {k: v for k, v in res.items() if k != "file"}, FileData(path=str(out / res["file"]))
+
+
+# --- cloud projects in the user's own Hugging Face account ---------------------------
+def _need(token: OAuthToken | None) -> str:
+    if token is None:
+        raise ValueError("请先用 Hugging Face 登录")
+    return token.token
+
+
+@app.api(name="cloud_list")
+def cloud_list(token: OAuthToken | None = None) -> dict:
+    """List the signed-in user's saved projects."""
+    if token is None:
+        return {"login": False, "available": CLOUD}
+    return {"login": True, **cloud.list_projects(token.token)}
+
+
+@app.api(name="cloud_save")
+def cloud_save(project: FileData, name: str, token: OAuthToken | None = None) -> dict:
+    """Save a project file (.json from the studio) to the user's private dataset."""
+    return cloud.save_project(_need(token), name, _path(project))
+
+
+@app.api(name="cloud_load")
+def cloud_load(name: str, token: OAuthToken | None = None) -> FileData:
+    """Download one saved project."""
+    return FileData(path=cloud.load_project(_need(token), name))
 
 
 # --- the studio page ------------------------------------------------------------------

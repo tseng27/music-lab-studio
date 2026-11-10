@@ -96,3 +96,74 @@ def test_lines_from_words_maps_chinese_and_english():
 def test_lines_from_words_word_spanning_two_lines():
     out = engines.lines_from_words(["我爱", "你"], [(0.0, 1.0, "我爱你")])
     assert [l["start"] for l in out] == [0.0, 0.0]
+
+
+def test_cloud_needs_login(server):
+    assert server[1].predict(api_name="/cloud_list") == {"login": False, "available": False}
+    with pytest.raises(Exception, match="登录"):
+        server[1].predict("x", api_name="/cloud_load")
+
+
+class FakeHub:
+    def __init__(self):
+        self.files, self.repos = {}, set()
+
+    def whoami(self, token):
+        assert token == "tok"
+        return {"name": "alice"}
+
+    def repo_exists(self, rid, repo_type, token):
+        return rid in self.repos
+
+    def create_repo(self, rid, repo_type, private, exist_ok, token):
+        assert private and repo_type == "dataset"
+        self.repos.add(rid)
+
+    def upload_file(self, path_or_fileobj, path_in_repo, repo_id, repo_type, token, commit_message):
+        self.files[path_in_repo] = open(path_or_fileobj).read()
+
+    def list_repo_files(self, rid, repo_type, token):
+        return list(self.files) + [".gitattributes"]
+
+    def hf_hub_download(self, rid, filename, repo_type, token):
+        return self.files[filename]
+
+
+def test_cloud_roundtrip_with_fake_hub(tmp_path):
+    from backend import cloud
+
+    hub = FakeHub()
+    assert cloud.list_projects("tok", hub) == {"repo": "alice/musiclab-projects", "projects": []}
+    f = tmp_path / "p.json"
+    f.write_text('{"tracks":[]}')
+    assert cloud.save_project("tok", "我的 歌/v1", f, hub) == {"repo": "alice/musiclab-projects", "name": "我的_歌_v1"}
+    assert cloud.list_projects("tok", hub)["projects"] == ["我的_歌_v1"]
+    assert cloud.load_project("tok", "我的 歌/v1", hub) == '{"tracks":[]}'
+
+
+def test_collab_room_sync(server):
+    import asyncio
+
+    import websockets
+
+    url, _ = server
+    base = url.replace("http", "ws")
+
+    async def run():
+        async with websockets.connect(base + "collab/room1234/ws?cid=a&name=A") as a:
+            assert json.loads(await a.recv())["type"] == "welcome"
+            r = httpx.post(url + "collab/room1234/audio/b1", content=b"RIFFdata")
+            assert r.status_code == 200
+            await a.send(json.dumps({"type": "audio", "bid": "b1", "name": "鼓"}))
+            await a.send(json.dumps({"type": "state", "state": '{"tracks":[1]}'}))
+            await asyncio.sleep(0.2)
+            async with websockets.connect(base + "collab/room1234/ws?cid=b&name=B") as b:
+                w = json.loads(await b.recv())
+                assert w["state"] == '{"tracks":[1]}' and w["audio"] == [{"bid": "b1", "name": "鼓"}]
+                assert [m["name"] for m in w["members"]] == ["A", "B"]
+                assert json.loads(await a.recv())["type"] == "members"
+                await b.send(json.dumps({"type": "state", "state": '{"tracks":[2]}'}))
+                assert json.loads(await a.recv()) == {"type": "state", "state": '{"tracks":[2]}', "from": "b"}
+            assert httpx.get(url + "collab/room1234/audio/b1").content == b"RIFFdata"
+
+    asyncio.run(run())

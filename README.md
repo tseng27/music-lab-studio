@@ -8,6 +8,11 @@ sdk_version: 6.29.1
 python_version: "3.10"
 app_file: app.py
 pinned: false
+hf_oauth: true
+hf_oauth_scopes:
+  - write-repos
+  - manage-repos
+hf_oauth_expiration_minutes: 480
 ---
 
 # 音乐实验室工作站
@@ -32,6 +37,10 @@ pinned: false
 - 侧链压缩（例如鼓一响，伴奏自动让开）
 - 五段参数 EQ，带频率响应曲线和实时频谱
 - 响度表（LUFS，依 ITU-R BS.1770）和一键母带：导出时调到 -14 或 -9 LUFS，峰值不超过 -1 dB
+- 自动保存：每次修改都存在浏览器里（IndexedDB），重新打开页面可以恢复
+- 云端工程：用 Hugging Face 帐号登录，工程存到你自己的私人 dataset `<用户名>/musiclab-projects`，换电脑也能打开
+- 多人协作房间：建立房间后分享连结，大家同时编辑同一个工程，看得到彼此的播放位置（房间存在服务器内存里，最后一人离开就删除）
+- 手机和平板：窄屏布局、双指缩放时间线、触控友善的按钮
 
 **后端**（`app.py` + `backend/engines.py`）用 Gradio 的 `Server` 提供上面的网页，同时提供 AI 接口。每个接口都走 Gradio 的排队机制；在 Hugging Face ZeroGPU 上，GPU 只在调用期间分配，用量记在调用者自己的额度上。
 
