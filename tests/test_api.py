@@ -187,6 +187,9 @@ def test_musicgen_loads_once_with_fake_transformers(tmp_path, monkeypatch):
         def numpy(self):
             return self.a
 
+    SR = 1000
+    calls = []
+
     class Inputs(dict):
         def to(self, dev):
             return self
@@ -197,11 +200,11 @@ def test_musicgen_loads_once_with_fake_transformers(tmp_path, monkeypatch):
             loads.append(name)
             return cls()
 
-        def __call__(self, **kw):
-            return Inputs()
+        def __call__(self, audio=None, **kw):
+            return Inputs(prompt=0 if audio is None else len(audio))
 
     class Model:
-        config = types.SimpleNamespace(audio_encoder=types.SimpleNamespace(sampling_rate=32000))
+        config = types.SimpleNamespace(audio_encoder=types.SimpleNamespace(sampling_rate=SR))
 
         @classmethod
         def from_pretrained(cls, name):
@@ -210,8 +213,11 @@ def test_musicgen_loads_once_with_fake_transformers(tmp_path, monkeypatch):
         def eval(self):
             return self
 
-        def generate(self, max_new_tokens, **kw):
-            return [Out(np.zeros((1, 3200), dtype=np.float32))]
+        def generate(self, max_new_tokens, prompt=0, **kw):
+            # like MusicGen: the returned audio starts with the (re-decoded) prompt
+            calls.append((prompt, max_new_tokens))
+            n = prompt + max_new_tokens * SR // 50
+            return [Out(np.full((1, n), 0.1 * len(calls), dtype=np.float32))]
 
     fake_torch = types.ModuleType("torch")
     fake_torch.no_grad = contextlib.nullcontext
@@ -223,4 +229,17 @@ def test_musicgen_loads_once_with_fake_transformers(tmp_path, monkeypatch):
         res = engines._musicgen("strings", 5, tmp_path, lambda *_: None)
         assert res == {"file": "generated.wav", "engine": "musicgen"}
     assert loads == [engines.MUSICGEN_MODEL]
-    assert sf.info(tmp_path / "generated.wav").samplerate == 32000
+    assert sf.info(tmp_path / "generated.wav").samplerate == SR
+
+    # 70 s = one 30 s window + two 20 s continuations, each prompted with the last 10 s
+    calls.clear()
+    engines._musicgen("strings", 70, tmp_path, lambda *_: None)
+    assert calls == [(0, 1500), (10 * SR, 1000), (10 * SR, 1000)]
+    out, sr = sf.read(tmp_path / "generated.wav")
+    assert len(out) == 70 * SR
+    # no repeated prompt audio: each window contributes only its new part
+    assert np.allclose(out[: 30 * SR], 0.1, atol=1e-3) and np.allclose(out[30 * SR: 50 * SR], 0.2, atol=1e-3) and np.allclose(out[50 * SR:], 0.3, atol=1e-3)
+    # capped at two minutes
+    calls.clear()
+    engines._musicgen("strings", 240, tmp_path, lambda *_: None)
+    assert len(sf.read(tmp_path / "generated.wav")[0]) == 120 * SR

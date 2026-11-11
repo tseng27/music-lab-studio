@@ -65,7 +65,12 @@ def _gpu_align(src: str, lines: list[str], language: str, vocals_first: bool, ou
     return engines.align(Path(src), lines, language, vocals_first, Path(out_dir))
 
 
-@GPU(duration=180)
+def _generate_seconds(opts: dict, out_dir: str) -> int:
+    """GPU time to ask for: long pieces are made in several MusicGen windows."""
+    return int(min(300, 60 + 1.5 * float(opts.get("duration") or 30)))
+
+
+@GPU(duration=_generate_seconds)
 def _gpu_generate(opts: dict, out_dir: str) -> dict:
     return engines.generate(opts, Path(out_dir))
 
