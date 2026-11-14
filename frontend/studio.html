@@ -75,6 +75,7 @@ input[type=range]{accent-color:var(--accent)}
 #playhead::before{content:"";position:absolute;top:0;left:-6px;border:6px solid transparent;border-top:8px solid var(--accent)}
 .grid{position:absolute;inset:0;pointer-events:none}
 .drop{outline:2px dashed var(--accent);outline-offset:-3px}
+body.dragging::after{content:'放开即可导入音频';position:fixed;inset:12px;border:3px dashed var(--accent);border-radius:14px;background:rgba(15,17,22,.72);color:var(--accent);font:600 28px/1 var(--f-ui);display:flex;align-items:center;justify-content:center;z-index:80;pointer-events:none}
 
 /* clips */
 .clip{position:absolute;top:4px;bottom:4px;border-radius:5px;overflow:hidden;cursor:grab;user-select:none;touch-action:none;border:1px solid rgba(255,255,255,.12)}
@@ -213,7 +214,7 @@ svg.auto circle{cursor:grab}
     <div class="grp"><button id="bSnap" class="on" title="吸附到 1/16 拍网格（拖动时按住 Alt 临时关闭）">吸附</button><button id="bMet" title="节拍器">节拍器</button>
       <span class="lbl">缩放</span><input id="zoom" type="range" min="15" max="400" value="70" style="width:90px"></div>
     <div class="grp">
-      <button id="bImport" class="primary">导入音频</button><input id="file" type="file" accept="audio/*" multiple hidden>
+      <button id="bImport" title="选择音乐文件；也可以把文件直接拖进网页" class="primary">导入音频</button><input id="file" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,.webm" multiple hidden>
       <button id="bAdd" title="新建音频轨">+ 音频轨</button>
       <button id="bAddInst" title="新建乐器轨（MIDI）">+ 乐器轨</button>
       <button id="bMidi" title="在选中的乐器轨、播放头位置新建 4 小节 MIDI 片段">新建 MIDI</button>
@@ -450,7 +451,7 @@ function renderTracks(){const R=$('#rows');R.innerHTML='';
     const lane=row.querySelector('.lane');bindLane(lane,t);R.appendChild(row);
     for(const c of S.clips.filter(c=>c.tid===t.id))lane.appendChild(clipEl(c));
     if(t.showAuto)lane.appendChild(autoEl(t))}
-  if(!S.tracks.length)R.innerHTML='<div class="empty">点击「+ 音轨」或「导入音频」开始</div>'}
+  if(!S.tracks.length)R.innerHTML='<div class="empty">把音乐文件直接拖进来，或点「导入音频」「+ 乐器轨」开始</div>'}
 const instOpts=v=>Object.entries(INST).map(([k,n])=>`<option value="${k}" ${k===v?'selected':''}>${n}</option>`).join('');
 document.addEventListener('change',e=>{const id=e.target.dataset&&e.target.dataset.inst;if(!id)return;const t=S.tracks.find(t=>t.id===id);if(!t)return;pushUndo();t.inst=e.target.value;$$(`[data-inst="${id}"]`).forEach(s=>s.value=t.inst);
   const rc=S.clips.find(c=>c.id===S.rollClip);if(rc&&rc.tid===id)$('#rInst').value=t.inst;if(SAMPLED[t.inst])loadInst(t.inst).then(()=>preview(t.inst,60));rebuildIfPlaying();preview(t.inst,t.inst==='drums'?36:60)});
@@ -499,7 +500,7 @@ function clipDown(e,c,el){if(e.button!==0)return;e.stopPropagation();e.preventDe
   el.addEventListener('pointermove',mv);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up)}
 function bindLane(lane,t){lane.addEventListener('pointerdown',e=>{if(e.target!==lane&&!e.target.classList.contains('grid'))return;marquee(e);if(!e.shiftKey)select(null);S.selTrack=t.id;$$('.trow .hdr').forEach(h=>h.classList.toggle('sel',h.parentElement.dataset.tid===t.id));const r=lane.getBoundingClientRect();seek(snapT((e.clientX-r.left)/S.pps,e))});
   lane.addEventListener('dragover',e=>{e.preventDefault();lane.classList.add('drop')});lane.addEventListener('dragleave',()=>lane.classList.remove('drop'));
-  lane.addEventListener('drop',async e=>{e.preventDefault();lane.classList.remove('drop');const r=lane.getBoundingClientRect();const files=[...e.dataTransfer.files].filter(f=>f.type.startsWith('audio')||/\.(wav|mp3|ogg|flac|m4a|aac|webm)$/i.test(f.name));if(!files.length)return;importFiles(files,t.id,snapT((e.clientX-r.left)/S.pps))})}
+  lane.addEventListener('drop',async e=>{e.preventDefault();lane.classList.remove('drop');const r=lane.getBoundingClientRect();const files=[...e.dataTransfer.files].filter(isAudioFile);if(!files.length)return;importFiles(files,t.id,snapT((e.clientX-r.left)/S.pps))})}
 function splitSel(){const c=S.clips.find(c=>c.id===S.sel);if(!c)return toast('先点选一个片段');const p=curPos();if(p<=c.start+0.01||p>=c.start+c.dur-0.01)return toast('播放头需要在片段内部');
   pushUndo();const lt=p-c.start;let n;
   if(c.kind==='midi'){n=cloneClip(c);n.start=p;n.dur=c.dur-lt;n.notes=c.notes.filter(x=>x.s>=lt).map(x=>({...x,s:x.s-lt}));c.notes=c.notes.filter(x=>x.s<lt).map(x=>({...x,d:Math.min(x.d,lt-x.s)}));c.dur=lt}
@@ -603,8 +604,16 @@ async function importFiles(files,tid,at){let t=tid?S.tracks.find(t=>t.id===tid):
   if(i===1){const c=S.clips[S.clips.length-1];select(c.id);analyzeClip(c).then(r=>{renderInspector();toast(`检测到约 ${r.bpm} BPM · ${r.key}。到「片段」分页可以套用到工程`,5000)}).catch(()=>{})}}
 $('#bImport').onclick=()=>$('#file').click();
 $('#file').onchange=e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)importFiles(fs,null,null)};
-$('#arr').addEventListener('dragover',e=>e.preventDefault());
-$('#arr').addEventListener('drop',e=>{if(e.target.closest('.lane[data-tid]'))return;e.preventDefault();const fs=[...e.dataTransfer.files];if(fs.length)importFiles(fs,null,snapT(curPos()))});
+/* drop audio (or a saved project) anywhere on the page; lanes handle drops on themselves */
+const isAudioFile=f=>f.type.startsWith('audio')||/\.(wav|mp3|ogg|opus|flac|m4a|aac|webm)$/i.test(f.name);
+let dragDepth=0;const hasFiles=e=>[...(e.dataTransfer&&e.dataTransfer.types||[])].includes('Files');
+addEventListener('dragenter',e=>{if(!hasFiles(e))return;dragDepth++;document.body.classList.add('dragging')});
+addEventListener('dragleave',e=>{if(!hasFiles(e))return;if(--dragDepth<=0){dragDepth=0;document.body.classList.remove('dragging')}});
+addEventListener('dragover',e=>{if(hasFiles(e))e.preventDefault()});
+addEventListener('drop',async e=>{if(!hasFiles(e))return;e.preventDefault();dragDepth=0;document.body.classList.remove('dragging');if(e.target.closest&&e.target.closest('.lane[data-tid]'))return;
+  const all=[...e.dataTransfer.files],proj=all.find(f=>/\.json$/i.test(f.name)),fs=all.filter(isAudioFile);
+  if(proj&&!fs.length){try{toast('正在打开工程…',8000);await openProject(JSON.parse(await proj.text()));toast('工程已打开')}catch(err){toast('打开失败：'+err.message)}return}
+  if(fs.length)importFiles(fs,null,snapT(curPos()));else toast('只能拖入音频文件（MP3、WAV、M4A、FLAC、OGG）或工程文件')});
 
 function encodeWAV(buf){const ch=buf.numberOfChannels,len=buf.length,sr=buf.sampleRate,bytes=44+len*ch*2,ab=new ArrayBuffer(bytes),v=new DataView(ab);let o=0;const w4=s=>{for(const c of s)v.setUint8(o++,c.charCodeAt(0))};
   w4('RIFF');v.setUint32(o,bytes-8,true);o+=4;w4('WAVEfmt ');v.setUint32(o,16,true);o+=4;v.setUint16(o,1,true);o+=2;v.setUint16(o,ch,true);o+=2;v.setUint32(o,sr,true);o+=4;v.setUint32(o,sr*ch*2,true);o+=4;v.setUint16(o,ch*2,true);o+=2;v.setUint16(o,16,true);o+=2;w4('data');v.setUint32(o,len*ch*2,true);o+=4;
