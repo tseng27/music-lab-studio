@@ -73,6 +73,21 @@ def test_align(server, wav):
     assert [l["text"] for l in res["lines"]] == ["第一句", "第二句"] and res["lines"][0]["start"] == 0
 
 
+def test_lyrics(server, wav):
+    res = server[1].predict(wav, "zh-TW", True, api_name="/lyrics")
+    assert [l["text"] for l in res["lines"]][:1] == ["第一句歌词"]
+    assert all(l["start"] < l["end"] for l in res["lines"])
+
+
+def test_clean_lyric_lines():
+    segs = [(0, 2, " 我把春天带着走，"), (2, 3, "我把春天带着走"), (3, 4, "字幕由 xx 提供"), (5, 6, "  ")]
+    lines = engines.clean_lyric_lines(segs, "zh-TW")
+    assert [l["start"] for l in lines] == [0, 2]
+    assert lines[0]["text"] == "我把春天帶著走"
+    assert engines.clean_lyric_lines([(0, 1, "Hello.")], "en")[0]["text"] == "Hello"
+    assert engines.whisper_language("zh-TW") == "zh"
+
+
 def test_transcribe_and_generate(server, wav):
     assert server[1].predict(wav, api_name="/transcribe")["notes"]
     info, path = server[1].predict("lofi piano", "", 10, 90, "zh", api_name="/generate")
