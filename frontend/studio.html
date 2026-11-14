@@ -230,7 +230,7 @@ svg.auto circle{cursor:grab}
       <button id="bLim" class="on" title="母带限幅器：防止总输出削波">限幅</button>
       <select id="exNorm" class="tsel" style="flex:0 0 auto" title="导出时的母带响度"><option value="">原始响度</option><option value="-14" selected>母带 -14 LUFS（串流）</option><option value="-9">母带 -9 LUFS（响亮）</option></select>
       <button id="bExport">导出混音</button></div>
-    <div class="grp"><button id="bSave">保存工程</button><button id="bOpen">打开工程</button><button id="bCloud" hidden title="存到你的 Hugging Face 帐号，换电脑也能打开">☁ 云端</button><button id="bCollab" hidden title="建立协作房间，和朋友一起编辑">👥 协作</button><span class="hint" id="autoInfo"></span><span class="hint" id="collabInfo"></span><input id="projFile" type="file" accept=".json,application/json" hidden></div>
+    <div class="grp"><button id="bNew" title="清空所有音轨、歌词和段落，从空白开始（可以撤销）">新建工程</button><button id="bSave">保存工程</button><button id="bOpen">打开工程</button><button id="bCloud" hidden title="存到你的 Hugging Face 帐号，换电脑也能打开">☁ 云端</button><button id="bCollab" hidden title="建立协作房间，和朋友一起编辑">👥 协作</button><span class="hint" id="autoInfo"></span><span class="hint" id="collabInfo"></span><input id="projFile" type="file" accept=".json,application/json" hidden></div>
   </div>
 
   <div class="arr" id="arr">
@@ -583,7 +583,9 @@ let lastK=-2;
 function updateKara(p){const k=curLyr(p);if(k!==lastK){lastK=k;$$('.lyb').forEach(b=>b.classList.toggle('cur',+b.dataset.i===k));$$('#lyrList .li').forEach(d=>d.classList.toggle('cur',+d.dataset.i===k));
     const k1=$('#k1');k1.firstChild.textContent=k>=0?S.lyrics[k].text:(S.lyrics[0]?.text||'—');k1.querySelector('span').textContent=k1.firstChild.textContent;const nx=S.lyrics.slice(k+1).find(x=>x.text);$('#k2').textContent=k>=0?(nx?.text||''):(S.lyrics[1]?.text||'')}
   const sp=$('#k1 span');if(k>=0){const a=S.lyrics[k].t,b=lyrEnd(k);sp.style.width=clamp((p-a)/Math.max(0.1,(b-a)*0.85),0,1)*100+'%'}else sp.style.width='0%'}
-$('#bLoadLyr').onclick=()=>{const L=parseLyrics($('#lyrText').value);if(!L.length)return toast('请先输入歌词，每行一句');pushUndo();S.lyrics=L;sortLyr();lastK=-2;renderLyrics();toast(`已载入 ${L.length} 句歌词`)};
+$('#bNew').onclick=async()=>{if(S.clips.length&&!confirm('清空目前的工程，从空白开始？\n（按「撤销」可以恢复）'))return;
+  await openProject({name:'',bpm:100,master:S.master,limit:true,tracks:[],clips:[],lyrics:[],markers:[],audio:{}});$('#lyrText').value='';S.selTrack=null;renderAll();toast('已新建空白工程：按「导入音频」或「+乐器轨」开始')};
+$('#bLoadLyr').onclick=()=>{const L=parseLyrics($('#lyrText').value);if(!L.length){if(!S.lyrics.length)return toast('请先输入歌词，每行一句');if(!confirm('文字框是空的，要清空时间线上的歌词吗？'))return;pushUndo();S.lyrics=[];lastK=-2;renderLyrics();return toast('已清空歌词（可以撤销）')}pushUndo();S.lyrics=L;sortLyr();lastK=-2;renderLyrics();toast(`已载入 ${L.length} 句歌词`)};
 $('#bTap').onclick=()=>{if(!S.lyrics.length){const L=parseLyrics($('#lyrText').value);if(!L.length)return toast('请先输入歌词');pushUndo();S.lyrics=L}
   if(tapMode){endTap();return}pushUndo();tapMode=true;tapIdx=0;S.lyrics.forEach(l=>l.t=null);$('#bTap').textContent='结束打点';$('#bTap').classList.remove('primary');renderLyrics();seek(0);if(!playing)play();toast('听到每句开始时按 Enter 或 T')};
 function tap(){if(!tapMode)return;if(tapIdx>=S.lyrics.length)return endTap();S.lyrics[tapIdx].t=+curPos().toFixed(2);tapIdx++;lastK=-2;renderLyrics();if(tapIdx>=S.lyrics.length)endTap()}
