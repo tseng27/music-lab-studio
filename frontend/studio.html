@@ -122,7 +122,10 @@ textarea{width:100%;min-height:120px;flex:1;resize:vertical;background:#0b0c10;b
 .li.next{outline:1px dashed var(--accent)}
 .li .t{font-family:var(--f-mono);font-size:12px;color:var(--accent);cursor:pointer;font-variant-numeric:tabular-nums}
 .li .t.no{color:var(--muted)}
-.li .x{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.li .x{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;border-radius:3px;padding:1px 3px}
+.li .x:hover{background:#ffffff0d}
+.li .x[contenteditable="true"],.lyb[contenteditable="true"]{outline:1px solid var(--accent);background:#0b0c10;color:#fff;white-space:pre;text-overflow:clip;cursor:text;user-select:text}
+.li .b button{padding:1px 6px}
 .li button{padding:1px 6px;font-size:11px}
 .kara{background:#0b0c10;border-radius:6px;padding:16px;flex:1;display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:120px;text-align:center}
 .kara .k1{font-size:22px;font-weight:600;position:relative;display:inline-block;color:#5d6475;line-height:1.4}
@@ -310,7 +313,7 @@ svg.auto circle{cursor:grab}
         <div class="card">
           <h5>歌词文本 <span><button id="bAiLyr" title="用 AI 从选中片段的歌声辨识歌词（需要连接 AI 服务器）">AI 听写</button> <button id="bLoadLyr">载入到时间线</button></span></h5>
           <textarea id="lyrText" placeholder="每行一句歌词；也可以直接粘贴 LRC 格式（[00:12.30]歌词）"></textarea>
-          <div class="hint">载入后点「开始打点」，音乐从头播放，每唱到一句就按 <kbd>Enter</kbd> 或 <kbd>T</kbd>。打完后可在时间线的「歌词」轨上左右拖动微调。</div>
+          <div class="hint">改错字：在右边列表或时间线的歌词上<b>点两下</b>直接修改；或在这里改完按「载入到时间线」（句数不变时会保留时间）。载入后点「开始打点」，音乐从头播放，每唱到一句就按 <kbd>Enter</kbd> 或 <kbd>T</kbd>。打完后可在时间线的「歌词」轨上左右拖动微调。</div>
         </div>
         <div class="card">
           <h5>时间轴 <span><button id="bTap" class="primary">开始打点</button> <button id="bTapKey" title="打点 (Enter / T)">打点 ⏎</button></span></h5>
@@ -571,11 +574,25 @@ function lyrEnd(i){const l=S.lyrics[i];for(let j=i+1;j<S.lyrics.length;j++)if(S.
 function curLyr(p){let k=-1;S.lyrics.forEach((l,i)=>{if(l.t!=null&&l.t<=p)k=i});return k}
 function renderLyrics(){renderLyrList();renderLyrLane();$('#lyrCount').textContent=S.lyrics.length?`${S.lyrics.filter(l=>l.t!=null).length}/${S.lyrics.length}`:''}
 function renderLyrList(){const L=$('#lyrList');L.innerHTML='';S.lyrics.forEach((l,i)=>{const d=document.createElement('div');d.className='li'+(tapMode&&i===tapIdx?' next':'');d.dataset.i=i;
-  d.innerHTML=`<span class="t ${l.t==null?'no':''}" title="跳到这句">${l.t==null?'--:--.--':fmtShort(l.t)}</span><span class="x"></span><span><button title="把当前播放位置设为这句的开始">设</button></span>`;d.querySelector('.x').textContent=l.text;
-  d.querySelector('.t').onclick=()=>{if(l.t!=null)seek(l.t)};d.querySelector('button').onclick=()=>{pushUndo();l.t=+curPos().toFixed(2);sortLyr();renderLyrics()};L.appendChild(d)})}
-function renderLyrLane(){const lane=$('#lyrLane');lane.innerHTML='';S.lyrics.forEach((l,i)=>{if(l.t==null)return;const b=document.createElement('div');b.className='lyb';b.dataset.i=i;b.textContent=l.text;b.title=l.text+'（拖动调整时间）';
+  d.innerHTML=`<span class="t ${l.t==null?'no':''}" title="跳到这句">${l.t==null?'--:--.--':fmtShort(l.t)}</span><span class="x" title="点两下修改文字"></span><span class="b"><button class="set" title="把当前播放位置设为这句的开始">设</button><button class="add" title="在下面插入一句">＋</button><button class="del" title="删除这句">×</button></span>`;const x=d.querySelector('.x');x.textContent=l.text;
+  d.querySelector('.t').onclick=()=>{if(l.t!=null)seek(l.t)};d.querySelector('.set').onclick=()=>{pushUndo();l.t=+curPos().toFixed(2);sortLyr();renderLyrics()};
+  x.ondblclick=()=>editLyric(x,l);
+  d.querySelector('.add').onclick=()=>{pushUndo();const nl={id:uid(),t:null,text:''};const nx=S.lyrics[i+1];if(l.t!=null){const e=nx&&nx.t!=null?nx.t:l.t+4;nl.t=+((l.t+e)/2).toFixed(2)}S.lyrics.splice(i+1,0,nl);syncLyrText();renderLyrics();
+    const nd=$(`#lyrList .li[data-i="${i+1}"] .x`);if(nd)editLyric(nd,nl,true)};
+  d.querySelector('.del').onclick=()=>{pushUndo();S.lyrics.splice(i,1);lastK=-2;syncLyrText();renderLyrics()};L.appendChild(d)})}
+function syncLyrText(){$('#lyrText').value=S.lyrics.map(l=>l.text).join('\n')}
+/* Edit a lyric line in place: Enter or clicking away saves, Esc cancels. */
+function editLyric(el,l,isNew){if(el.isContentEditable)return;const old=l.text;el.contentEditable='true';el.textContent=old;el.focus();
+  const r=document.createRange();r.selectNodeContents(el);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);let done=false;
+  const finish=save=>{if(done)return;done=true;el.contentEditable='false';el.removeEventListener('keydown',kd);el.removeEventListener('blur',bl);
+    const t=el.textContent.replace(/\s+/g,' ').trim();
+    if(save&&t&&t!==old){if(!isNew)pushUndo();l.text=t}else if(isNew&&!t){S.lyrics.splice(S.lyrics.indexOf(l),1);undoS.pop()}
+    lastK=-2;syncLyrText();renderLyrics()};
+  const kd=e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();finish(true)}else if(e.key==='Escape'){e.preventDefault();finish(false)}};
+  const bl=()=>finish(true);el.addEventListener('keydown',kd);el.addEventListener('blur',bl)}
+function renderLyrLane(){const lane=$('#lyrLane');lane.innerHTML='';S.lyrics.forEach((l,i)=>{if(l.t==null)return;const b=document.createElement('div');b.className='lyb';b.dataset.i=i;b.textContent=l.text;b.title=l.text+'（拖动调整时间，点两下修改文字）';b.ondblclick=()=>editLyric(b,l);
   b.style.left=l.t*S.pps+'px';b.style.width=Math.max(20,(lyrEnd(i)-l.t)*S.pps-3)+'px';
-  b.addEventListener('pointerdown',e=>{e.preventDefault();const before=snap(),sx=e.clientX,o=l.t;let moved=false;b.setPointerCapture(e.pointerId);
+  b.addEventListener('pointerdown',e=>{if(b.isContentEditable)return;e.preventDefault();const before=snap(),sx=e.clientX,o=l.t;let moved=false;b.setPointerCapture(e.pointerId);
     const prev=S.lyrics.slice(0,i).reverse().find(x=>x.t!=null),next=S.lyrics.slice(i+1).find(x=>x.t!=null);
     const mv=ev=>{const dx=(ev.clientX-sx)/S.pps;if(Math.abs(ev.clientX-sx)>2)moved=true;if(!moved)return;l.t=+clamp(snapT(o+dx,ev),prev?prev.t+0.05:0,next?next.t-0.05:1e9).toFixed(3);b.style.left=l.t*S.pps+'px'};
     const up=()=>{b.removeEventListener('pointermove',mv);b.removeEventListener('pointerup',up);if(moved){undoS.push(before);redoS.length=0;renderLyrics()}else seek(l.t)};
@@ -586,7 +603,8 @@ function updateKara(p){const k=curLyr(p);if(k!==lastK){lastK=k;$$('.lyb').forEac
   const sp=$('#k1 span');if(k>=0){const a=S.lyrics[k].t,b=lyrEnd(k);sp.style.width=clamp((p-a)/Math.max(0.1,(b-a)*0.85),0,1)*100+'%'}else sp.style.width='0%'}
 $('#bNew').onclick=async()=>{if(S.clips.length&&!confirm('清空目前的工程，从空白开始？\n（按「撤销」可以恢复）'))return;
   await openProject({name:'',bpm:100,master:S.master,limit:true,tracks:[],clips:[],lyrics:[],markers:[],audio:{}});$('#lyrText').value='';S.selTrack=null;renderAll();toast('已新建空白工程：按「导入音频」或「+乐器轨」开始')};
-$('#bLoadLyr').onclick=()=>{const L=parseLyrics($('#lyrText').value);if(!L.length){if(!S.lyrics.length)return toast('请先输入歌词，每行一句');if(!confirm('文字框是空的，要清空时间线上的歌词吗？'))return;pushUndo();S.lyrics=[];lastK=-2;renderLyrics();return toast('已清空歌词（可以撤销）')}pushUndo();S.lyrics=L;sortLyr();lastK=-2;renderLyrics();toast(`已载入 ${L.length} 句歌词`)};
+$('#bLoadLyr').onclick=()=>{const L=parseLyrics($('#lyrText').value);if(!L.length){if(!S.lyrics.length)return toast('请先输入歌词，每行一句');if(!confirm('文字框是空的，要清空时间线上的歌词吗？'))return;pushUndo();S.lyrics=[];lastK=-2;renderLyrics();return toast('已清空歌词（可以撤销）')}pushUndo();if(L.every(l=>l.t==null)&&L.length===S.lyrics.length&&S.lyrics.some(l=>l.t!=null)){L.forEach((l,i)=>l.t=S.lyrics[i].t);S.lyrics=L;lastK=-2;renderLyrics();return toast('已更新歌词文字，时间保留')}
+  S.lyrics=L;sortLyr();lastK=-2;renderLyrics();toast(`已载入 ${L.length} 句歌词`)};
 $('#bTap').onclick=()=>{if(!S.lyrics.length){const L=parseLyrics($('#lyrText').value);if(!L.length)return toast('请先输入歌词');pushUndo();S.lyrics=L}
   if(tapMode){endTap();return}pushUndo();tapMode=true;tapIdx=0;S.lyrics.forEach(l=>l.t=null);$('#bTap').textContent='结束打点';$('#bTap').classList.remove('primary');renderLyrics();seek(0);if(!playing)play();toast('听到每句开始时按 Enter 或 T')};
 function tap(){if(!tapMode)return;if(tapIdx>=S.lyrics.length)return endTap();S.lyrics[tapIdx].t=+curPos().toFixed(2);tapIdx++;lastK=-2;renderLyrics();if(tapIdx>=S.lyrics.length)endTap()}
@@ -738,10 +756,11 @@ function clipWavBlob(c){const b=BUF.get(c.bid).buf,sr=b.sampleRate,s0=Math.floor
   for(let ch=0;ch<b.numberOfChannels;ch++)out.copyToChannel(b.getChannelData(ch).subarray(s0,s0+n),ch);return new Blob([encodeWAV(out)],{type:'audio/wav'})}
 /* one queued call; shows the queue position while waiting (ZeroGPU may queue) */
 async function aiCall(name,params,label){aiLog(label+'：已提交，第一次使用要先下载模型，可能要等几分钟');const job=AI.client.submit('/'+name,params);
-  for await(const ev of job){if(ev.type==='status'){if(ev.stage==='error')throw new Error(ev.message||'处理失败');
+  for await(const ev of job){if(ev.type==='status'){if(ev.stage==='error')throw new Error(/quota|zerogpu/i.test(ev.message||'')?AI_QUOTA:(ev.message||'处理失败'));
       $('#aiStat').textContent=label+'：'+(ev.queue&&ev.position>0?`排队中，前面还有 ${ev.position} 个`:'处理中…')}
     else if(ev.type==='data')return ev.data}
-  throw new Error('连接中断')}
+  throw new Error('连接中断：可能是今天的免费 GPU 额度用完了（每天重置），或服务器正在重启，稍后再试')}
+const AI_QUOTA='今天的免费 GPU 额度用完了（Hugging Face 每天重置）。明天再试；不用 GPU 的功能可以照常使用。';
 const aiFile=b=>AI.gc.handle_file(b);
 async function aiFetchAudio(f){const r=await fetch(f.url);if(!r.ok)throw new Error('下载结果失败 '+r.status);return await decode(new Blob([await r.arrayBuffer()]))}
 async function aiRun(btn,fn){btn.disabled=true;const t=btn.textContent;btn.textContent='处理中…';try{await fn()}catch(e){const m=e&&(e.message||e.title)||String(e);aiLog(m,'e');toast('AI 处理失败：'+m,4500)}finally{btn.disabled=false;btn.textContent=t;$('#aiStat').textContent=AI.feat?'已连接':'未连接'}}
@@ -1120,7 +1139,7 @@ const PANES={mix:'#pMix',clip:'#pClip',eq:'#pEq',roll:'#pRoll',lyr:'#pLyr',ana:'
 function showTab(name){$$('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===name));for(const[k,s]of Object.entries(PANES))$(s).hidden=k!==name;$('#dock').classList.remove('min');$('#bDock').textContent='▾';if(name==='roll')renderRoll(true);if(name==='clip')renderInspector();if(name==='eq')renderEQ();if(name==='ana')fillAnaSrc()}
 $$('.tab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 $('#bDock').onclick=()=>{const d=$('#dock');d.classList.toggle('min');$('#bDock').textContent=d.classList.contains('min')?'▴':'▾';setTimeout(drawRuler,0)};
-addEventListener('keydown',e=>{const tg=e.target.tagName;if(tg==='TEXTAREA'||(tg==='INPUT'&&e.target.type!=='range'))return;const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
+addEventListener('keydown',e=>{const tg=e.target.tagName;if(tg==='TEXTAREA'||e.target.isContentEditable||(tg==='INPUT'&&e.target.type!=='range'))return;const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
   if(keysOn&&!mod&&keyPlay(e,true))return;
   if(mod&&k==='a'){e.preventDefault();S.multi=new Set(S.clips.map(c=>c.id));S.sel=S.clips[0]?.id||null;$$('.clip').forEach(x=>x.classList.add('sel'));return}
   if(k==='escape'){select(null);return}

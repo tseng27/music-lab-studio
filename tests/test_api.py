@@ -88,6 +88,15 @@ def test_clean_lyric_lines():
     assert engines.whisper_language("zh-TW") == "zh"
 
 
+def test_split_phrases():
+    words = [(0.0, 0.5, "一朵"), (0.5, 1.0, "知己"), (1.0, 1.4, "風"), (1.6, 2.0, " 世界"), (2.0, 2.5, "模樣"),
+             (2.5, 3.0, "換幾回"), (5.0, 5.5, "歌聲"), (5.5, 6.0, "還在"), (6.0, 6.5, "我心頭"),
+             (6.6, 7.0, " wherever"), (7.0, 7.2, " I"), (7.2, 7.5, " go")]
+    got = [(a, b, t) for a, b, t in engines.split_phrases(words)]
+    assert [t for *_, t in got] == ["一朵知己風", "世界模樣換幾回", "歌聲還在我心頭", "wherever I go"]
+    assert got[1][:2] == (1.6, 3.0)
+
+
 def test_transcribe_and_generate(server, wav):
     assert server[1].predict(wav, api_name="/transcribe")["notes"]
     info, path = server[1].predict("lofi piano", "", 10, 90, "zh", api_name="/generate")

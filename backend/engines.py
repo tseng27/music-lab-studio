@@ -249,6 +249,35 @@ def clean_lyric_lines(segments: list[tuple[float, float, str]], language: str = 
     return out
 
 
+_CJK = re.compile(r"[\u3000-\u9fff\uf900-\ufaff]")
+
+
+def split_phrases(words: list[tuple[float, float, str]], gap: float = 0.8) -> list[tuple[float, float, str]]:
+    """Cut one Whisper segment into sung phrases.
+
+    Whisper often returns several sung lines as one segment, with a space between
+    Chinese phrases. Break there, or wherever the singer pauses; spaces between
+    English words stay inside the phrase.
+    """
+    out: list[tuple[float, float, str]] = []
+    cur: list[tuple[float, float, str]] = []
+
+    def flush():
+        if cur:
+            out.append((cur[0][0], cur[-1][1], "".join(w[2] for w in cur).strip()))
+            cur.clear()
+
+    for w in words:
+        if cur:
+            text = "".join(x[2] for x in cur).strip()
+            spaced = w[2][:1].isspace() and (_CJK.search(text[-1:]) or _CJK.search(w[2].strip()[:1]))
+            if (spaced and len(text) >= 4) or (w[0] - cur[-1][1] > gap and len(text) >= 2):
+                flush()
+        cur.append(w)
+    flush()
+    return out
+
+
 def lyrics(src: Path, language: str = "zh-TW", vocals_first: bool = True, out_dir: Path | None = None,
            progress: Progress = print) -> dict:
     """Listen to the singing and write the lyrics down, each line with its start and end time."""
@@ -264,7 +293,11 @@ def lyrics(src: Path, language: str = "zh-TW", vocals_first: bool = True, out_di
     with on_device(model):
         result = model.transcribe(str(audio), language=lang, initial_prompt=_PROMPT.get(language) or _PROMPT.get(lang),
                                   condition_on_previous_text=False)
-    lines = clean_lyric_lines([(seg.start, seg.end, seg.text) for seg in result.segments], language)
+    phrases = []
+    for seg in result.segments:
+        words = [(w.start, w.end, w.word) for w in (getattr(seg, "words", None) or [])]
+        phrases += split_phrases(words) if words else [(seg.start, seg.end, seg.text)]
+    lines = clean_lyric_lines(phrases, language)
     if not lines:
         raise ValueError("没有听到歌声，试试选人声轨，或勾选「先分离人声」")
     return {"lines": lines}

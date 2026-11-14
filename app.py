@@ -55,17 +55,50 @@ def _path(f: FileData | dict) -> Path:
 
 
 # --- GPU work: each runs inside one ZeroGPU allocation --------------------------
-@GPU(duration=150)
+# ZeroGPU checks the time a call asks for against the caller's daily quota, so ask
+# for what the clip needs instead of a fixed worst case.
+def _seconds_of(src: str) -> float:
+    try:
+        return float(engines.sf.info(src).duration)
+    except Exception:
+        return 180.0
+
+
+def _separate_seconds(src: str, out_dir: str, mode: str) -> int:
+    return int(min(150, 25 + 0.35 * _seconds_of(src)))
+
+
+def _whisper_seconds(src: str, *rest) -> int:
+    vocals_first = next((a for a in rest if isinstance(a, bool)), False)
+    d = _seconds_of(src)
+    return int(min(180, 25 + 0.5 * d + (0.35 * d if vocals_first else 0)))
+
+
+QUOTA_MSG = "今天的免费 GPU 额度用完了（Hugging Face 每天重置）。明天再试；不用 GPU 的功能可以照常使用。"
+
+
+def _gpu_call(fn, *args):
+    """Run a GPU job and turn ZeroGPU's quota refusal into a message the studio can show."""
+    try:
+        return fn(*args)
+    except Exception as e:
+        text = f"{type(e).__name__}: {e}"
+        if "quota" in text.lower() or "zerogpu" in text.lower():
+            raise ValueError(QUOTA_MSG) from e
+        raise
+
+
+@GPU(duration=_separate_seconds)
 def _gpu_separate(src: str, out_dir: str, mode: str) -> dict:
     return engines.separate(Path(src), Path(out_dir), mode)
 
 
-@GPU(duration=180)
+@GPU(duration=_whisper_seconds)
 def _gpu_align(src: str, lines: list[str], language: str, vocals_first: bool, out_dir: str) -> dict:
     return engines.align(Path(src), lines, language, vocals_first, Path(out_dir))
 
 
-@GPU(duration=180)
+@GPU(duration=_whisper_seconds)
 def _gpu_lyrics(src: str, language: str, vocals_first: bool, out_dir: str) -> dict:
     return engines.lyrics(Path(src), language, vocals_first, Path(out_dir))
 
@@ -99,7 +132,7 @@ def separate(
         raise ValueError("mode 只能是 vocals、4stems 或 6stems")
     print(f"[separate] mode={mode} file={_path(audio).stat().st_size // 1024} KB", flush=True)
     out = _job_dir()
-    res = _gpu_separate(str(_path(audio)), str(out), mode)
+    res = _gpu_call(_gpu_separate, str(_path(audio)), str(out), mode)
     stems = res["stems"][:MAX_STEMS]
     files = [FileData(path=str(out / s["file"])) for s in stems]
     files += [None] * (MAX_STEMS - len(files))
@@ -110,14 +143,14 @@ def separate(
 def align(audio: FileData, lyrics: str, language: str = "zh", vocals_first: bool = True) -> dict:
     """Time each lyric line. ``lyrics`` is a JSON list of lines or plain text, one line per row."""
     lines = json.loads(lyrics) if lyrics.strip().startswith("[") else lyrics.splitlines()
-    return _gpu_align(str(_path(audio)), lines, language, vocals_first, str(_job_dir()))
+    return _gpu_call(_gpu_align, str(_path(audio)), lines, language, vocals_first, str(_job_dir()))
 
 
 @app.api(name="lyrics", concurrency_limit=1)
 def lyrics(audio: FileData, language: str = "zh-TW", vocals_first: bool = True) -> dict:
     """Listen to the singing and write the lyrics down: {"lines": [{text, start, end}]} (seconds)."""
     print(f"[lyrics] language={language} vocals_first={vocals_first}", flush=True)
-    return _gpu_lyrics(str(_path(audio)), language, vocals_first, str(_job_dir()))
+    return _gpu_call(_gpu_lyrics, str(_path(audio)), language, vocals_first, str(_job_dir()))
 
 
 @app.api(name="transcribe", concurrency_limit=2)
@@ -132,7 +165,7 @@ def generate(prompt: str, lyrics: str = "", duration: float = 30, bpm: int = 0, 
     print(f"[generate] duration={duration} prompt={len(prompt)} chars", flush=True)
     engines.prefetch_generate_model()
     out = _job_dir()
-    res = _gpu_generate({"prompt": prompt, "lyrics": lyrics, "duration": duration, "bpm": bpm or None, "language": language}, str(out))
+    res = _gpu_call(_gpu_generate, {"prompt": prompt, "lyrics": lyrics, "duration": duration, "bpm": bpm or None, "language": language}, str(out))
     return {k: v for k, v in res.items() if k != "file"}, FileData(path=str(out / res["file"]))
 
 
