@@ -1,7 +1,7 @@
 """音乐实验室工作站 — Hugging Face Space entry point (also runs locally).
 
 Serves the studio page at ``/`` and the AI tools as Gradio API endpoints
-(``/separate``, ``/align``, ``/transcribe``, ``/generate``, ``/health``). The
+(``/separate``, ``/align``, ``/lyrics``, ``/transcribe``, ``/generate``, ``/health``). The
 endpoints go through Gradio's queue, so on a ZeroGPU Space each call borrows a
 GPU only while it runs and is billed to the caller's Hugging Face quota.
 
@@ -65,6 +65,11 @@ def _gpu_align(src: str, lines: list[str], language: str, vocals_first: bool, ou
     return engines.align(Path(src), lines, language, vocals_first, Path(out_dir))
 
 
+@GPU(duration=180)
+def _gpu_lyrics(src: str, language: str, vocals_first: bool, out_dir: str) -> dict:
+    return engines.lyrics(Path(src), language, vocals_first, Path(out_dir))
+
+
 def _generate_seconds(opts: dict, out_dir: str) -> int:
     """GPU time to ask for: long pieces are made in several MusicGen windows."""
     return int(min(300, 60 + 1.5 * float(opts.get("duration") or 30)))
@@ -106,6 +111,13 @@ def align(audio: FileData, lyrics: str, language: str = "zh", vocals_first: bool
     """Time each lyric line. ``lyrics`` is a JSON list of lines or plain text, one line per row."""
     lines = json.loads(lyrics) if lyrics.strip().startswith("[") else lyrics.splitlines()
     return _gpu_align(str(_path(audio)), lines, language, vocals_first, str(_job_dir()))
+
+
+@app.api(name="lyrics", concurrency_limit=1)
+def lyrics(audio: FileData, language: str = "zh-TW", vocals_first: bool = True) -> dict:
+    """Listen to the singing and write the lyrics down: {"lines": [{text, start, end}]} (seconds)."""
+    print(f"[lyrics] language={language} vocals_first={vocals_first}", flush=True)
+    return _gpu_lyrics(str(_path(audio)), language, vocals_first, str(_job_dir()))
 
 
 @app.api(name="transcribe", concurrency_limit=2)

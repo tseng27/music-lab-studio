@@ -68,11 +68,12 @@ class on_device:
 
 def features() -> dict:
     if MOCK:
-        return {"separate": True, "align": True, "transcribe": True, "generate": "mock", "mock": True}
+        return {"separate": True, "align": True, "lyrics": True, "transcribe": True, "generate": "mock", "mock": True}
     gen = "acestep" if ACESTEP_URL else ("musicgen" if has("transformers") and has("torch") else None)
     return {
         "separate": has("demucs"),
         "align": has("stable_whisper"),
+        "lyrics": has("stable_whisper"),
         "transcribe": has("basic_pitch"),
         "generate": gen,
         "mock": False,
@@ -177,6 +178,29 @@ def lines_from_words(lines: list[str], words: list[tuple[float, float, str]]) ->
 _whisper = None
 
 
+def whisper_language(language: str | None) -> str:
+    """The studio sends "zh-TW" for Traditional Chinese; Whisper only knows "zh"."""
+    return (language or "zh").split("-")[0].lower()
+
+
+def _load_whisper(progress: Progress):
+    global _whisper
+    import stable_whisper  # type: ignore
+
+    if _whisper is None:
+        progress(f"载入 Whisper {WHISPER_MODEL} 模型…")
+        _whisper = stable_whisper.load_model(WHISPER_MODEL, device="cpu")
+    return _whisper
+
+
+def _vocals(src: Path, vocals_first: bool, out_dir: Path | None, progress: Progress) -> Path:
+    if not (vocals_first and has("demucs") and out_dir is not None):
+        return src
+    progress("先分离人声，让辨识更准…")
+    res = separate(src, out_dir, "vocals", progress)
+    return out_dir / next(s["file"] for s in res["stems"] if s["name"] == "vocals")
+
+
 def align(src: Path, lyrics: list[str], language: str = "zh", vocals_first: bool = True, out_dir: Path | None = None,
           progress: Progress = print) -> dict:
     lyrics = [l.strip() for l in lyrics if l.strip()]
@@ -186,22 +210,64 @@ def align(src: Path, lyrics: list[str], language: str = "zh", vocals_first: bool
         dur = sf.info(str(src)).duration
         step = dur / len(lyrics)
         return {"lines": [{"text": l, "start": round(i * step, 3), "end": round((i + 1) * step - 0.1, 3)} for i, l in enumerate(lyrics)]}
-    audio = src
-    if vocals_first and has("demucs") and out_dir is not None:
-        progress("先分离人声，让对齐更准…")
-        res = separate(src, out_dir, "vocals", progress)
-        audio = out_dir / next(s["file"] for s in res["stems"] if s["name"] == "vocals")
-    global _whisper
-    import stable_whisper  # type: ignore
-
-    if _whisper is None:
-        progress(f"载入 Whisper {WHISPER_MODEL} 模型…")
-        _whisper = stable_whisper.load_model(WHISPER_MODEL, device="cpu")
+    audio = _vocals(src, vocals_first, out_dir, progress)
+    model = _load_whisper(progress)
     progress("Whisper 正在对齐歌词…")
-    with on_device(_whisper):
-        result = _whisper.align(str(audio), "\n".join(lyrics), language=language)
+    with on_device(model):
+        result = model.align(str(audio), "\n".join(lyrics), language=whisper_language(language))
     words = [(w.start, w.end, w.word) for w in result.all_words()]
     return {"lines": lines_from_words(lyrics, words)}
+
+
+# Lines Whisper tends to invent on music or silence (subtitle credits, "please subscribe").
+_HALLUCINATION = re.compile(r"字幕|訂閱|订阅|點贊|点赞|轉發|转发|打賞|打赏|明鏡|明镜|感谢观看|感謝觀看|谢谢观看|謝謝觀看|请不吝|請不吝")
+_EDGE_PUNCT = " \t，。！？、；：,.!?;:…「」『』\"'（）()"
+_PROMPT = {
+    "zh-TW": "以下是一首繁體中文流行歌的歌詞。",
+    "zh": "以下是一首中文流行歌的歌词。",
+}
+
+
+def _to_traditional(text: str) -> str:
+    try:
+        import opencc  # type: ignore
+    except ImportError:
+        return text
+    return opencc.OpenCC("s2tw").convert(text)
+
+
+def clean_lyric_lines(segments: list[tuple[float, float, str]], language: str = "zh") -> list[dict]:
+    """Turn Whisper segments into lyric lines: trim punctuation, drop invented credits."""
+    out: list[dict] = []
+    for start, end, text in segments:
+        text = re.sub(r"\s+", " ", text or "").strip().strip(_EDGE_PUNCT).strip()
+        if not text or _HALLUCINATION.search(text):
+            continue
+        if language == "zh-TW":
+            text = _to_traditional(text)
+        out.append({"text": text, "start": round(float(start), 3), "end": round(float(end), 3)})
+    return out
+
+
+def lyrics(src: Path, language: str = "zh-TW", vocals_first: bool = True, out_dir: Path | None = None,
+           progress: Progress = print) -> dict:
+    """Listen to the singing and write the lyrics down, each line with its start and end time."""
+    if MOCK:
+        dur = sf.info(str(src)).duration
+        demo = ["第一句歌词", "第二句歌词", "第三句歌词", "第四句歌词"]
+        step = dur / len(demo)
+        return {"lines": [{"text": t, "start": round(i * step, 3), "end": round((i + 1) * step - 0.1, 3)} for i, t in enumerate(demo)]}
+    audio = _vocals(src, vocals_first, out_dir, progress)
+    model = _load_whisper(progress)
+    lang = whisper_language(language)
+    progress("Whisper 正在听写歌词…")
+    with on_device(model):
+        result = model.transcribe(str(audio), language=lang, initial_prompt=_PROMPT.get(language) or _PROMPT.get(lang),
+                                  condition_on_previous_text=False)
+    lines = clean_lyric_lines([(seg.start, seg.end, seg.text) for seg in result.segments], language)
+    if not lines:
+        raise ValueError("没有听到歌声，试试选人声轨，或勾选「先分离人声」")
+    return {"lines": lines}
 
 
 # ---------------------------------------------------------------- audio -> MIDI
@@ -240,7 +306,7 @@ def _acestep(opts, prompt, lyrics, duration, out_dir, progress):
     import httpx
 
     headers = {"Authorization": f"Bearer {ACESTEP_API_KEY}"} if ACESTEP_API_KEY else {}
-    body = {"prompt": prompt, "lyrics": lyrics, "audio_duration": duration, "vocal_language": opts.get("language") or "zh",
+    body = {"prompt": prompt, "lyrics": lyrics, "audio_duration": duration, "vocal_language": whisper_language(opts.get("language")),
             "audio_format": "wav", "batch_size": 1, "thinking": True}
     if opts.get("bpm"):
         body["bpm"] = int(opts["bpm"])

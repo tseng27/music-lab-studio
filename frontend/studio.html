@@ -294,8 +294,8 @@ svg.auto circle{cursor:grab}
       <div class="aigrid">
         <div class="card"><h5>分轨分离 <span class="chip" data-f="separate"></span></h5><div class="hint">把选中的音频片段拆成人声、伴奏，或拆成鼓、贝斯、其他乐器，放到新轨道上并对齐原位置。</div>
           <div class="grp"><select id="aiSepMode" class="tsel"><option value="vocals">人声 + 伴奏</option><option value="4stems">四轨：人声/鼓/贝斯/其他</option><option value="6stems">六轨：再拆出吉他、钢琴</option></select><button id="aiSep" class="primary">分离选中片段</button></div></div>
-        <div class="card"><h5>自动对歌词 <span class="chip" data-f="align"></span></h5><div class="hint">用「歌词对齐」里的歌词，自动给选中片段的每一句打上时间。</div>
-          <div class="grp"><select id="aiLang" class="tsel"><option value="zh">中文</option><option value="en">英文</option><option value="ja">日文</option><option value="ko">韩文</option></select><label class="hint"><input type="checkbox" id="aiVoc" checked> 先分离人声</label><button id="aiAlign" class="primary">自动对齐</button></div></div>
+        <div class="card"><h5>歌词 <span class="chip" data-f="align"></span></h5><div class="hint">没有歌词：按「AI 听写歌词」，从歌声直接辨识出歌词并打上时间（可能有错字，可在「歌词对齐」里修改）。已有歌词：按「自动对齐」只对时间。选人声轨会更准。</div>
+          <div class="grp"><select id="aiLang" class="tsel" style="width:auto;flex:none"><option value="zh-TW">中文（繁体）</option><option value="zh">中文（简体）</option><option value="en">英文</option><option value="ja">日文</option><option value="ko">韩文</option></select><label class="hint"><input type="checkbox" id="aiVoc" checked> 先分离人声</label><button id="aiLyr" class="primary">AI 听写歌词</button><button id="aiAlign">自动对齐</button></div></div>
         <div class="card"><h5>音频转 MIDI <span class="chip" data-f="transcribe"></span></h5><div class="hint">识别选中片段里的旋律或和弦，生成一条可以在钢琴卷帘里编辑的 MIDI 乐器轨。</div>
           <div class="grp"><button id="aiMidi" class="primary">转成 MIDI</button></div></div>
         <div class="card"><h5>AI 作曲 <span class="chip" data-f="generate"></span></h5>
@@ -308,7 +308,7 @@ svg.auto circle{cursor:grab}
     <div class="pane" id="pLyr" hidden>
       <div class="lyr">
         <div class="card">
-          <h5>歌词文本 <span><button id="bLoadLyr">载入到时间线</button></span></h5>
+          <h5>歌词文本 <span><button id="bAiLyr" title="用 AI 从选中片段的歌声辨识歌词（需要连接 AI 服务器）">AI 听写</button> <button id="bLoadLyr">载入到时间线</button></span></h5>
           <textarea id="lyrText" placeholder="每行一句歌词；也可以直接粘贴 LRC 格式（[00:12.30]歌词）"></textarea>
           <div class="hint">载入后点「开始打点」，音乐从头播放，每唱到一句就按 <kbd>Enter</kbd> 或 <kbd>T</kbd>。打完后可在时间线的「歌词」轨上左右拖动微调。</div>
         </div>
@@ -755,6 +755,16 @@ $('#aiAlign').onclick=e=>{if(!aiNeed('align'))return;const c=selAudioClip();if(!
   aiRun(e.target,async()=>{const [res]=await aiCall('align',{audio:aiFile(clipWavBlob(c)),lyrics:JSON.stringify(lines),language:$('#aiLang').value,vocals_first:$('#aiVoc').checked},'歌词对齐');
     pushUndo();S.lyrics=res.lines.map(l=>({id:uid(),t:l.start==null?null:+(c.start+l.start).toFixed(2),text:l.text}));sortLyr();lastK=-2;renderLyrics();
     aiLog(`对齐完成：${res.lines.filter(l=>l.start!=null).length}/${res.lines.length} 句有时间`,'d')})};
+const isVocalClip=c=>/人声|vocal/i.test(c.name+' '+((S.tracks.find(t=>t.id===c.tid)||{}).name||''));
+function aiListenLyrics(btn){if(!aiNeed(AI.feat&&'lyrics' in AI.feat?'lyrics':'align'))return;const c=selAudioClip();if(!c)return;
+  if(S.lyrics.length&&!confirm('听写结果会取代时间线上现有的歌词（可以撤销），要继续吗？'))return;
+  const voc=$('#aiVoc').checked&&!isVocalClip(c);
+  aiRun(btn,async()=>{const [res]=await aiCall('lyrics',{audio:aiFile(clipWavBlob(c)),language:$('#aiLang').value,vocals_first:voc},'AI 听写歌词');
+    pushUndo();S.lyrics=res.lines.map(l=>({id:uid(),t:l.start==null?null:+(c.start+l.start).toFixed(2),text:l.text}));sortLyr();lastK=-2;
+    $('#lyrText').value=S.lyrics.map(l=>l.text).join('\n');renderLyrics();renderAll();
+    aiLog(`听写完成：${res.lines.length} 句歌词，已放到时间线；有错字可在「歌词对齐」里修改`,'d');toast(`听写出 ${res.lines.length} 句歌词`)})}
+$('#aiLyr').onclick=e=>aiListenLyrics(e.target);
+$('#bAiLyr').onclick=e=>{if(!AI.feat){showTab('ai');return toast('请先在「AI 工具」连接 AI 服务器')}aiListenLyrics(e.target)};
 $('#aiMidi').onclick=e=>{if(!aiNeed('transcribe'))return;const c=selAudioClip();if(!c)return;aiRun(e.target,async()=>{const [res]=await aiCall('transcribe',{audio:aiFile(clipWavBlob(c))},'音频转 MIDI');
   pushUndo();const t=newTrack((c.name+' · MIDI').slice(0,24),'piano');const mc=newMidiClip(t.id,c.start,c.dur,res.notes.filter(n=>n.p>=RLO&&n.p<=RHI));mc.name='识别结果';renderAll();rebuildIfPlaying();aiLog(`识别出 ${mc.notes.length} 个音符`,'d')})};
 $('#aiGen').onclick=e=>{if(!aiNeed('generate'))return;const prompt=$('#aiPrompt').value.trim();const lyr=$('#aiUseLyr').checked?(S.lyrics.length?S.lyrics.map(l=>l.text).join('\n'):$('#lyrText').value.trim()):'';if(!prompt&&!lyr)return toast('请写一段风格描述');
